@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "signalbridge-django-sdk"
-version = "1.0.0"
+version = "1.0.1"
 description = "Django SDK for SignalBridge SMS Gateway"
 readme = "README.md"
 requires-python = ">=3.8"

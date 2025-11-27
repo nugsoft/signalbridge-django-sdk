@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="signalbridge-django-sdk",
-    version="1.0.0",
+    version="1.0.1",
     author="Asaba William",
     author_email="asabawilliam@gmail.com",
     description="Django SDK for SignalBridge SMS Gateway - Send SMS through multiple vendors with unified API",
