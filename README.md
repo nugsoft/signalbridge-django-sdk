@@ -5,8 +5,8 @@ Official Django SDK for SignalBridge SMS Gateway - Send SMS through multiple ven
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![Django Version](https://img.shields.io/badge/django-3.2%2B-green)](https://www.djangoproject.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/pypi/v/signalbridge-django)](https://pypi.org/project/signalbridge-django/)
-[![Downloads](https://img.shields.io/pypi/dm/signalbridge-django)](https://pypi.org/project/signalbridge-django/)
+[![Version](https://img.shields.io/pypi/v/signalbridge-django-sdk)](https://pypi.org/project/signalbridge-django-sdk/)
+[![Downloads](https://img.shields.io/pypi/dm/signalbridge-django-sdk)](https://pypi.org/project/signalbridge-django-sdk/)
 
 ## Features
 
@@ -458,4 +458,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - **Laravel SDK**: [nugsoft/signalbridge-laravel-sdk](https://github.com/nugsoft/signalbridge-laravel-sdk)
 - **PHP SDK**: [nugsoft/signalbridge-php-sdk](https://github.com/nugsoft/signalbridge-php-sdk)
-
