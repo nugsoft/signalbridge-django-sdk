@@ -44,6 +44,18 @@ the same segment maths as the gateway.
 - Removed `default_app_config`, which has had no effect since Django 3.2 and was
   removed from Django in 4.1.
 - `MANIFEST.in` no longer references a `migrations` directory that does not exist.
+- Packaging metadata lives only in `pyproject.toml`; `setup.py` is removed. The
+  two files disagreed, and `pyproject.toml` wins, so the published package was
+  getting the short description and three classifiers rather than the full set
+  declared in `setup.py`.
+- The license is declared as the SPDX expression `MIT` with `license-files`
+  (PEP 639) instead of a `license` table and a `License ::` classifier, both of
+  which setuptools deprecates and stops supporting in February 2027. Builds are
+  now warning-free and `twine check` passes.
+- Dropped `wheel` and `setuptools_scm` from the build requirements: neither was
+  used, the version is static. The build now needs `setuptools>=77`.
+- The README told readers to `pip install signalbridge-django`, which is not the
+  name of this package.
 - A 404 now says that `SIGNALBRIDGE_URL` must include `/api`, rather than
   reporting a generic error.
 

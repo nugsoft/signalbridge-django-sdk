@@ -1,22 +1,38 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+# setuptools 77 is the first release that understands an SPDX `license`
+# expression and `license-files` (PEP 639).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "signalbridge-django-sdk"
 version = "2.0.0"
-description = "Django SDK for SignalBridge SMS Gateway"
+description = "Django SDK for SignalBridge SMS Gateway - Send SMS through multiple vendors with unified API"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Asaba William", email = "asabawilliam@gmail.com"}
 ]
 keywords = ["django", "sms", "signalbridge", "nugsoft", "messaging", "notifications"]
+# No "License ::" classifier: those are deprecated in favour of the SPDX
+# expression above, and setuptools warns when both are present.
 classifiers = [
-    "Framework :: Django",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Django",
+    "Framework :: Django :: 3.2",
+    "Framework :: Django :: 4.0",
+    "Framework :: Django :: 4.1",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
 ]
 
 dependencies = [
@@ -28,3 +44,13 @@ dependencies = [
 Homepage = "https://github.com/nugsoft/signalbridge-django-sdk"
 Documentation = "https://github.com/nugsoft/signalbridge-django-sdk"
 Repository = "https://github.com/nugsoft/signalbridge-django-sdk"
+Changelog = "https://github.com/nugsoft/signalbridge-django-sdk/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+# The tests and examples are part of the repository, not of the distribution.
+exclude = ["tests*", "examples*"]
+
+[tool.setuptools.package-data]
+# Shipped so an installed copy of the SDK carries its own agent guidance — see
+# AGENTS.md for how a consuming project points an agent at it.
+signalbridge = ["AGENTS.md"]

@@ -25,7 +25,7 @@ Official Django SDK for SignalBridge SMS Gateway - Send SMS through multiple ven
 ## Installation
 
 ```bash
-pip install signalbridge-django
+pip install signalbridge-django-sdk
 ```
 
 Add to your Django `INSTALLED_APPS`:
