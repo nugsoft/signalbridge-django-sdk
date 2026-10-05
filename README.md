@@ -2,7 +2,7 @@
 
 Official Django SDK for SignalBridge SMS Gateway - Send SMS through multiple vendors with a unified API.
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![Django Version](https://img.shields.io/badge/django-3.2%2B-green)](https://www.djangoproject.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/pypi/v/signalbridge-django-sdk)](https://pypi.org/project/signalbridge-django-sdk/)
@@ -18,11 +18,14 @@ Official Django SDK for SignalBridge SMS Gateway - Send SMS through multiple ven
 - **Management Commands** - CLI tools for common SMS operations
 - **Session Pooling** - HTTP session reuse for optimal performance
 - **Typed Exceptions** - Specific exceptions for different error scenarios
+- **Every Channel** - SMS, WhatsApp and Mobile Money, with USSD stubbed for when it ships
+- **Delivery Status** - Read a message's status, or follow up a whole batch
+- **Webhooks** - Manage endpoints and verify inbound signatures safely
 
 ## Installation
 
 ```bash
-pip install signalbridge-django
+pip install signalbridge-django-sdk
 ```
 
 Add to your Django `INSTALLED_APPS`:
@@ -36,6 +39,9 @@ INSTALLED_APPS = [
 
 # SignalBridge Configuration
 SIGNALBRIDGE_TOKEN = 'your-api-token-here'
+
+# Optional. Defaults to the production gateway. Must include the /api suffix.
+SIGNALBRIDGE_URL = 'https://signal-bridge.nugsoftapps.net/api'
 ```
 
 Or use environment variables:
@@ -43,6 +49,37 @@ Or use environment variables:
 ```bash
 # .env
 SIGNALBRIDGE_TOKEN=your-api-token-here
+```
+
+## Using this SDK with an AI coding agent
+
+The package ships agent guidance at `signalbridge/AGENTS.md`, covering the things
+that are easy to get expensively wrong — retrying a send that was already
+charged, sending real messages from a test suite, hand-rolling segment costs,
+verifying webhooks against a re-encoded body instead of the raw one.
+
+It is installed with the package, so it is present in any environment that has
+the SDK. Nothing discovers it automatically; wire it up once.
+
+Find the installed path:
+
+```bash
+python -c "import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / 'AGENTS.md')"
+```
+
+**Claude Code** — add one line to your project's `CLAUDE.md` (or your own
+`AGENTS.md`, which Claude Code reads when there is no `CLAUDE.md`). A path inside
+the working directory needs no approval:
+
+```md
+@.venv/lib/python3.12/site-packages/signalbridge/AGENTS.md
+```
+
+**Other agents, or an environment outside the project** — copy it in, and
+re-copy on upgrade:
+
+```bash
+cat "$(python -c 'import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / "AGENTS.md")')" >> AGENTS.md
 ```
 
 ## Quick Start
@@ -292,9 +329,103 @@ python manage.py signalbridge_transactions --page=1 --per-page=20 --type=debit
 
 ## API Reference
 
+### Channels
+
+Mirrors the PHP and Laravel SDKs:
+
+```python
+client.sms            # send, send_batch, status, messages
+client.whatsapp       # send, send_template
+client.mobile_money   # initiate, verify
+client.ussd           # planned, not live on the gateway yet
+```
+
+The flat methods (`send_sms()`, `send_batch()`, …) are kept and proxy to the
+channels, so existing code keeps working.
+
+### Token abilities
+
+A token carries abilities and the gateway enforces them on every route. A token
+created without a selection gets `*` and can do everything. A narrower token is
+refused elsewhere with a 403 naming the missing ability, raised here as
+`InsufficientPermissionsException` with a `required_ability` attribute:
+
+```python
+from signalbridge.exceptions import InsufficientPermissionsException
+
+try:
+    client.get_balance()
+except InsufficientPermissionsException as e:
+    print(e.required_ability)   # 'balance:read'
+```
+
+| Ability | Allows |
+|---------|--------|
+| `sms:send` | `send_sms()`, `send_batch()` |
+| `sms:read` | `get_message_status()`, `get_messages()` |
+| `balance:read` | `get_balance()`, `get_balance_summary()`, `get_transactions()` |
+| `balance:request-credit` | `request_credit()` |
+| `webhooks:read` / `webhooks:write` | reading / changing webhooks |
+| `export:read` | `export_messages()`, `export_transactions()` |
+
+> `whatsapp:send`, `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the WhatsApp and mobile money channels are unreleased, so reaching either needs a full-access (`*`) token.
+
+### Delivery status
+
+```python
+# One message. refresh=True asks the vendor live — rate limited, and rarely
+# needed, because the gateway polls vendors in the background.
+status = client.get_message_status(message_id)
+print(status['data']['status'])      # queued, sent, delivered, failed …
+
+# A whole batch, by the ids send_batch() returned. 'summary' counts the entire
+# filtered set rather than the current page.
+messages = client.get_messages(ids=[11, 12, 13])
+print(messages['summary']['by_status'])
+```
+
+### Webhooks
+
+```python
+created = client.create_webhook('https://your-app.example/webhooks/sms', ['message.delivered'])
+secret = created['secret']          # shown once, at creation
+```
+
+Verifying one in a Django view — always against `request.body`, the raw bytes,
+never a re-encoded copy of the parsed payload:
+
+```python
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from signalbridge import webhooks
+
+@csrf_exempt
+def sms_webhook(request):
+    if not webhooks.verify_request(request, settings.SIGNALBRIDGE_WEBHOOK_SECRET):
+        return HttpResponse(status=403)
+
+    ...
+    return HttpResponse(status=200)
+```
+
+### Exports
+
+```python
+csv = client.export_messages(start_date='2026-01-01')
+```
+
+### Retries
+
+Reads (GET/HEAD/OPTIONS) are retried three times on 500/502/503/504 with a
+backoff. **Sends are never retried automatically.** The gateway charges a message
+the moment it accepts one, so retrying a POST — including after a read timeout,
+which says nothing about whether the gateway processed it — risks delivering and
+billing the same SMS twice. Retry a send yourself only after checking
+`get_messages()` for what actually went out.
+
 ### Client Methods
 
-#### `send_sms(recipient, message, metadata=None, is_test=False, scheduled_at=None)`
+#### `send_sms(recipient, message, metadata=None, is_test=False, sender_id=None, scheduled_at=None)`
 
 Send a single SMS message.
 
@@ -302,18 +433,20 @@ Send a single SMS message.
 - `recipient` (str): Phone number in international format (e.g., '256700000000')
 - `message` (str): Message content (max 1000 characters)
 - `metadata` (dict, optional): Custom data to store with message
-- `is_test` (bool): Flag as test message (won't be charged)
+- `is_test` (bool): Flag as test message
+- `sender_id` (str, optional): Sender ID shown to the recipient (max 11 chars)
 - `scheduled_at` (datetime, optional): Schedule for future sending
 
 **Returns:** Dict with `success`, `message`, and `data` keys
 
-#### `send_batch(messages, is_test=False)`
+#### `send_batch(messages, is_test=False, sender_id=None)`
 
 Send multiple SMS messages in one request.
 
 **Parameters:**
 - `messages` (list): List of message dicts with `recipient`, `message`, optional `metadata`
 - `is_test` (bool): Mark all as test messages
+- `sender_id` (str, optional): Sender ID applied to every message in the batch
 
 **Returns:** Dict with total, successful, failed counts
 
@@ -416,39 +549,51 @@ SIGNALBRIDGE_TOKEN=your-api-token-here
 
 ## Testing
 
+### Testing your own code
+
+Patch the client's session so nothing leaves your machine. A test that reached
+the real gateway would send a real SMS and bill the account.
+
 ```python
 from django.test import TestCase
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 from signalbridge.client import SignalBridgeClient
 
 class SMSTestCase(TestCase):
-    @patch('signalbridge.client.requests.Session')
-    def test_send_sms(self, mock_session):
-        # Mock API response
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'success': True,
-            'message': 'SMS queued successfully'
-        }
-        mock_session.return_value.request.return_value = mock_response
-
+    def test_send_sms(self):
         client = SignalBridgeClient(token='test-token')
-        result = client.send_sms('256700000000', 'Test message')
+
+        response = MagicMock(status_code=200)
+        response.json.return_value = {'success': True, 'message': 'SMS queued successfully'}
+
+        with patch.object(client.session, 'request', return_value=response):
+            result = client.send_sms('256700000000', 'Test message')
 
         self.assertTrue(result['success'])
 ```
 
+### Testing this SDK
+
+```bash
+pip install django requests
+django-admin test tests --settings=tests.settings --pythonpath=.
+```
+
+`tests/test_segments.py` pins the segment maths against the gateway's own cases,
+including the GSM alphabet itself. If the gateway's
+`BalanceService::calculateSegments()` changes, that test should fail here before
+a client is quoted a price that does not match their invoice.
+
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - Django 3.2+
 - requests >= 2.25.0
 
 ## Support
 
 For issues and questions:
-- Documentation: https://signal-bridge.nugsoftstagging.com/docs
+- Documentation: https://signal-bridge.nugsoftapps.net/docs
 
 ## License
 

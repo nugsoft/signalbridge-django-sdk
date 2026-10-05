@@ -47,6 +47,36 @@ class NoClientException(SignalBridgeException):
         super().__init__(message, 403)
 
 
+class UnauthorizedException(SignalBridgeException):
+    """Raised when the API token is missing, expired or revoked"""
+
+    def __init__(self, message='Unauthorized. Check your API token.'):
+        super().__init__(message, 401)
+
+
+class InsufficientPermissionsException(SignalBridgeException):
+    """
+    Raised when the token or the user may not perform this action.
+
+    The gateway enforces token abilities, so a token scoped to (say) sms:send is
+    refused elsewhere. The response names the missing ability.
+    """
+
+    def __init__(self, message='Insufficient permissions to perform this action', data=None):
+        super().__init__(message, 403, data or {})
+
+    @property
+    def required_ability(self):
+        return self.data.get('required_ability')
+
+
+class RateLimitedException(SignalBridgeException):
+    """Raised when the client has gone over its per-minute request limit"""
+
+    def __init__(self, message='Too many requests. Please slow down.'):
+        super().__init__(message, 429)
+
+
 class ValidationException(SignalBridgeException):
     """Raised when validation fails"""
 

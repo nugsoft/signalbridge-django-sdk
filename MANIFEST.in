@@ -1,5 +1,8 @@
 include README.md
+include CHANGELOG.md
 include LICENSE
 include pyproject.toml
-recursive-include signalbridge/migrations *.py
 recursive-include signalbridge/management *.py
+include AGENTS.md
+include signalbridge/AGENTS.md
+recursive-include signalbridge *.md
