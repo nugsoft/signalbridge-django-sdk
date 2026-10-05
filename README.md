@@ -51,6 +51,37 @@ Or use environment variables:
 SIGNALBRIDGE_TOKEN=your-api-token-here
 ```
 
+## Using this SDK with an AI coding agent
+
+The package ships agent guidance at `signalbridge/AGENTS.md`, covering the things
+that are easy to get expensively wrong — retrying a send that was already
+charged, sending real messages from a test suite, hand-rolling segment costs,
+verifying webhooks against a re-encoded body instead of the raw one.
+
+It is installed with the package, so it is present in any environment that has
+the SDK. Nothing discovers it automatically; wire it up once.
+
+Find the installed path:
+
+```bash
+python -c "import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / 'AGENTS.md')"
+```
+
+**Claude Code** — add one line to your project's `CLAUDE.md` (or your own
+`AGENTS.md`, which Claude Code reads when there is no `CLAUDE.md`). A path inside
+the working directory needs no approval:
+
+```md
+@.venv/lib/python3.12/site-packages/signalbridge/AGENTS.md
+```
+
+**Other agents, or an environment outside the project** — copy it in, and
+re-copy on upgrade:
+
+```bash
+cat "$(python -c 'import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / "AGENTS.md")')" >> AGENTS.md
+```
+
 ## Quick Start
 
 ### Basic SMS Sending

@@ -36,5 +36,8 @@ setup(
         "requests>=2.25.0",
     ],
     include_package_data=True,
+    # Shipped so an installed copy of the SDK carries its own agent guidance —
+    # see AGENTS.md for how a consuming project points an agent at it.
+    package_data={"signalbridge": ["AGENTS.md"]},
     zip_safe=False,
 )
