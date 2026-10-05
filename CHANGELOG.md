@@ -56,6 +56,11 @@ the same segment maths as the gateway.
   used, the version is static. The build now needs `setuptools>=77`.
 - The README told readers to `pip install signalbridge-django`, which is not the
   name of this package.
+- The publish workflow ran on both `release: published` and `push: tags`, and
+  publishing a GitHub release from a tag fires both — so every release attempted
+  two uploads and the second failed on "file already exists". It now runs only
+  when a release is published, checks that the release tag matches the version in
+  `pyproject.toml`, and runs `twine check --strict` before uploading.
 - A 404 now says that `SIGNALBRIDGE_URL` must include `/api`, rather than
   reporting a generic error.
 

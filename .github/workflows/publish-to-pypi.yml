@@ -1,14 +1,22 @@
 name: Publish to PyPI
 
+# Publishing a GitHub release from a tag fires BOTH `release: published` and
+# `push: tags`, so running on both meant two uploads per release — the second
+# failing on "file already exists", which looks like a broken release every time.
+# Publishing a release is the deliberate act, so that is the only trigger. A tag
+# on its own no longer publishes; create the release when you mean to ship.
 on:
   release:
     types: [published]
-  push:
-    tags:
-      - "v*.*.*"
 
 permissions:
   contents: read
+
+# Never let two publishes of the same release overlap, and never cancel one
+# mid-upload.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-and-publish:
@@ -21,18 +29,35 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
           pip install build twine
 
-      - name: Build package
+      - name: Check the release tag matches the packaged version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          python -m build
+          PACKAGE_VERSION=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "pyproject.toml: ${PACKAGE_VERSION}"
+          echo "release tag:    ${RELEASE_TAG}"
+          if [ "${PACKAGE_VERSION}" != "${RELEASE_TAG#v}" ]; then
+            echo "::error::Release ${RELEASE_TAG} does not match the version in pyproject.toml (${PACKAGE_VERSION}). PyPI would publish ${PACKAGE_VERSION} under a tag that says otherwise."
+            exit 1
+          fi
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check the distributions
+        run: twine check --strict dist/*
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          # Consider PyPI trusted publishing instead of a long-lived token: add
+          # `permissions: id-token: write` to this job, configure this repository
+          # and workflow as a trusted publisher on PyPI, and drop this password.
           password: ${{ secrets.PYPI_API_TOKEN }}
