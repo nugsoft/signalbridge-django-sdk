@@ -1,5 +1,4 @@
 include README.md
 include LICENSE
 include pyproject.toml
-recursive-include signalbridge/migrations *.py
 recursive-include signalbridge/management *.py
