@@ -1,5 +1,6 @@
 """Management command to check SignalBridge balance"""
 from django.core.management.base import BaseCommand, CommandError
+
 from signalbridge.client import get_client
 from signalbridge.exceptions import SignalBridgeException
 
@@ -15,13 +16,14 @@ class Command(BaseCommand):
 
         try:
             result = client.get_balance(currency=options['currency'])
-            data = result['data']
+            data = result.get('data') or {}
 
             self.stdout.write(self.style.SUCCESS('\nBalance Summary\n'))
-            self.stdout.write(f"  Currency: {data['currency']}")
-            self.stdout.write(f"  Balance: {data['balance']}")
-            self.stdout.write(f"  Credit Limit: {data['credit_limit']}")
-            self.stdout.write(f"  Segment Price: {data['segment_price']}\n")
+            self.stdout.write("  Currency: {}".format(data.get('currency')))
+            self.stdout.write("  Balance: {}".format(data.get('balance')))
+            self.stdout.write("  Available: {}".format(data.get('available_balance')))
+            self.stdout.write("  Credit Limit: {}".format(data.get('credit_limit')))
+            self.stdout.write("  Segment Price: {}\n".format(data.get('segment_price')))
 
         except SignalBridgeException as e:
-            raise CommandError(f"✗ {str(e)}")
+            raise CommandError("✗ {}".format(str(e)))

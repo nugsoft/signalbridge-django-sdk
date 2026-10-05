@@ -1,5 +1,6 @@
 """Management command to send SMS from CLI"""
 from django.core.management.base import BaseCommand, CommandError
+
 from signalbridge.client import get_client
 from signalbridge.exceptions import SignalBridgeException
 
@@ -24,9 +25,16 @@ class Command(BaseCommand):
                 is_test=options.get('test', False)
             )
 
-            self.stdout.write(
-                self.style.SUCCESS(f"{result['message']}")
-            )
+            data = result.get('data', {})
+
+            self.stdout.write(self.style.SUCCESS(result.get('message', 'SMS queued')))
+
+            if data:
+                self.stdout.write("  Message ID: {}".format(data.get('message_id')))
+                self.stdout.write("  Status: {}".format(data.get('status')))
+                self.stdout.write("  Segments: {}".format(data.get('segments')))
+                self.stdout.write("  Cost: {}".format(data.get('cost')))
+                self.stdout.write("  Balance after: {}".format(data.get('balance_after')))
 
         except SignalBridgeException as e:
             raise CommandError(str(e))

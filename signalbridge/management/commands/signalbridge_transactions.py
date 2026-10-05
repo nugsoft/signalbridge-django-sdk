@@ -1,5 +1,6 @@
 """Management command to view transaction history"""
 from django.core.management.base import BaseCommand, CommandError
+
 from signalbridge.client import get_client
 from signalbridge.exceptions import SignalBridgeException
 
@@ -22,19 +23,35 @@ class Command(BaseCommand):
                 transaction_type=options.get('type')
             )
 
-            data = result['data']
-            transactions = data['data']
+            # The gateway returns a paginated resource collection: the rows sit
+            # under 'data' and the page counters under 'meta'. This command used
+            # to read result['data']['data'] and crash on a list.
+            transactions = result.get('data') or []
+            meta = result.get('meta') or {}
 
             self.stdout.write(self.style.SUCCESS('\nTransaction History\n'))
 
+            if not transactions:
+                self.stdout.write('  No transactions found.\n')
+                return
+
             for txn in transactions:
-                type_emoji = '💸' if txn['type'] == 'debit' else '💰'
+                type_emoji = '💸' if txn.get('type') == 'debit' else '💰'
                 self.stdout.write(
-                    f"  {type_emoji} {txn['type'].upper()}: {txn['amount']} "
-                    f"({txn['description']}) - {txn['created_at']}"
+                    "  {} {}: {} {} ({}) - {}".format(
+                        type_emoji,
+                        str(txn.get('type', '')).upper(),
+                        txn.get('amount'),
+                        txn.get('currency', ''),
+                        txn.get('description'),
+                        txn.get('created_at'),
+                    )
                 )
 
-            self.stdout.write(f"\nPage {data['current_page']} of {data['last_page']}\n")
+            current_page = meta.get('current_page', options['page'])
+            last_page = meta.get('last_page', '?')
+
+            self.stdout.write("\nPage {} of {}\n".format(current_page, last_page))
 
         except SignalBridgeException as e:
-            raise CommandError(f"✗ {str(e)}")
+            raise CommandError("✗ {}".format(str(e)))
