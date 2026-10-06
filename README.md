@@ -433,8 +433,8 @@ Send a single SMS message.
 - `recipient` (str): Phone number in international format (e.g., '256700000000')
 - `message` (str): Message content (max 1000 characters)
 - `metadata` (dict, optional): Custom data to store with message
-- `is_test` (bool): Flag as test message
-- `sender_id` (str, optional): Sender ID shown to the recipient (max 11 chars)
+- `is_test` (bool): A label only — the message is still sent and charged
+- `sender_id` (str, optional): **Deprecated, ignored.** The gateway sends every message as `NUGSOFT`
 - `scheduled_at` (datetime, optional): Schedule for future sending
 
 **Returns:** Dict with `success`, `message`, and `data` keys
@@ -445,8 +445,8 @@ Send multiple SMS messages in one request.
 
 **Parameters:**
 - `messages` (list): List of message dicts with `recipient`, `message`, optional `metadata`
-- `is_test` (bool): Mark all as test messages
-- `sender_id` (str, optional): Sender ID applied to every message in the batch
+- `is_test` (bool): A label only — the messages are still sent and charged
+- `sender_id` (str, optional): **Deprecated, ignored.** The gateway sends every message as `NUGSOFT`
 
 **Returns:** Dict with total, successful, failed counts
 

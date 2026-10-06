@@ -5,6 +5,23 @@ All notable changes to the SignalBridge Django SDK will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`sender_id` no longer has any effect.** The gateway now sends every message
+  as `NUGSOFT`, the only sender ID registered with its vendors, and ignores any
+  `sender_id` it is given. The option is still accepted so existing calls keep
+  working. A client-chosen sender ID the vendor had withdrawn left every message
+  refused with "sender id not assigned".
+- Documented that `is_test` is only a label: the message is still delivered and
+  charged. It was described as a test mode.
+
+### Fixed
+- A 404 for something that does not exist — `status()` on an unknown message,
+  a deleted webhook — reported "API endpoint not found" and pointed at the base
+  URL. The gateway's own message is now passed through; the base-URL hint is
+  kept for a 404 that did not come from the gateway.
+
 ## [2.0.0] - 2026-10-02
 
 Brought in line with `nugsoft/signalbridge-laravel-sdk` and

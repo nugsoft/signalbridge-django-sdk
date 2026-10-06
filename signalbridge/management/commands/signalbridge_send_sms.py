@@ -11,8 +11,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('recipient', type=str, help='Phone number')
         parser.add_argument('message', type=str, help='Message content')
-        parser.add_argument('--sender-id', type=str, help='Custom sender ID')
-        parser.add_argument('--test', action='store_true', help='Mark as test message')
+        parser.add_argument('--sender-id', type=str, help='Deprecated, ignored: the gateway always sends as NUGSOFT')
+        parser.add_argument('--test', action='store_true', help='Label as a test message (it is still sent and charged)')
 
     def handle(self, *args, **options):
         client = get_client()

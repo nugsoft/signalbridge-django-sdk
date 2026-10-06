@@ -248,6 +248,25 @@ class ErrorMappingTests(ClientTestCase):
 
         self.assertEqual(caught.exception.required_ability, 'sms:send')
 
+    def test_a_missing_resource_reports_what_the_gateway_said(self):
+        self.fake_request(FakeResponse(status_code=404, payload={
+            'success': False,
+            'message': 'Message not found.',
+        }))
+
+        with self.assertRaises(SignalBridgeException) as caught:
+            self.client.get_message_status(999)
+
+        self.assertIn('Message not found.', str(caught.exception))
+
+    def test_a_404_that_is_not_from_the_gateway_points_at_the_base_url(self):
+        self.fake_request(FakeResponse(status_code=404, text='<html>Not Found</html>'))
+
+        with self.assertRaises(SignalBridgeException) as caught:
+            self.client.get_message_status(999)
+
+        self.assertIn('Verify SIGNALBRIDGE_URL', str(caught.exception))
+
     def test_no_client_is_still_its_own_error(self):
         self.assert_raises_for(
             403,
