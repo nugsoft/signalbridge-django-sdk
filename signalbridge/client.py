@@ -327,8 +327,12 @@ class SignalBridgeClient:
 
             raise NoClientException(message)
         elif status == 404:
+            # A JSON 404 is SignalBridge answering — usually a message or
+            # webhook that does not exist. Only a 404 that did not come from
+            # the gateway (no JSON message) points at a wrong base URL.
             raise SignalBridgeException(
-                "API endpoint not found. Verify SIGNALBRIDGE_URL — it must include /api.",
+                message if "message" in data
+                else "API endpoint not found. Verify SIGNALBRIDGE_URL — it must include /api.",
                 status,
                 data,
             )

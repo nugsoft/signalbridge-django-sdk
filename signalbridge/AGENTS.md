@@ -23,8 +23,8 @@ client = get_client()          # process-wide singleton, pooled HTTP session
 client.send_sms('256700000000', 'Your code is 1234')
 ```
 
-Recipients are international format without a `+` (`256700000000`). Sender IDs are
-at most 11 characters and must be registered with the vendor. SMS bodies are
+Recipients are international format without a `+` (`256700000000`). Do not set a sender ID:
+the gateway sends everything as `NUGSOFT` and ignores `sender_id`. SMS bodies are
 capped at 1000 characters, WhatsApp at 4096. `scheduled_at` must be in the future.
 
 ## Never retry a send
@@ -57,7 +57,8 @@ with patch.object(client.session, 'request', return_value=response):
     client.send_sms('256700000000', 'Test')
 ```
 
-For a manual check against the real gateway, pass `is_test=True` and use a number
+There is no test mode. `is_test=True` only labels a message — it is still
+delivered and charged. For a manual check against the real gateway, use a number
 you control.
 
 ## Never calculate cost yourself
@@ -201,7 +202,7 @@ exposes no payout endpoint.
 ## Management commands
 
 ```bash
-python manage.py signalbridge_send_sms 256700000000 "Hello" --sender-id NUGSOFT --test
+python manage.py signalbridge_send_sms 256700000000 "Hello" --test
 python manage.py signalbridge_check_balance --currency UGX
 python manage.py signalbridge_transactions --type debit --per-page 50
 ```

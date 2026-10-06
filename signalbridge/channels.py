@@ -35,6 +35,9 @@ class SmsChannel(BaseChannel):
         """
         Send a single SMS message.
 
+        :param is_test: A label only — the message is still sent and charged
+        :param sender_id: Deprecated and ignored. The gateway sends every
+            message as NUGSOFT, the only sender ID registered with its vendors
         :param scheduled_at: Send at this time instead of now (must be future)
         """
         if not recipient or not recipient.strip():
@@ -74,6 +77,9 @@ class SmsChannel(BaseChannel):
 
         Each entry needs 'recipient' and 'message'; 'metadata' and
         'scheduled_at' are optional per message.
+
+        :param is_test: A label only — the messages are still sent and charged
+        :param sender_id: Deprecated and ignored; see send()
         """
         if not isinstance(messages, list) or not messages:
             raise ValidationException("Messages must be a non-empty list")
