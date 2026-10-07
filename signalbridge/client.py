@@ -256,6 +256,7 @@ class SignalBridgeClient:
         params=None,
         timeout=None,
         raw: bool = False,
+        binary: bool = False,
     ):
         url = "{}{}".format(self.base_url, endpoint if endpoint.startswith('/') else '/' + endpoint)
         timeout = timeout or self.timeout
@@ -271,6 +272,10 @@ class SignalBridgeClient:
 
             if response.status_code >= 400:
                 self._handle_error(response)
+
+            if binary:
+                # Files (a customer's photo or PDF) must not be decoded as text.
+                return response.content
 
             return response.text if raw else self._safe_json(response)
 

@@ -27,6 +27,7 @@ class FakeResponse:
         self.status_code = status_code
         self._payload = payload
         self.text = text if text is not None else json.dumps(payload or {})
+        self.content = self.text.encode('utf-8')
 
     def json(self):
         if self._payload is None:
@@ -185,13 +186,60 @@ class ChannelTests(ClientTestCase):
         calls = self.fake_request(FakeResponse(payload={}), FakeResponse(payload={}))
 
         self.client.whatsapp.send('256700000000', 'Hello')
-        self.client.whatsapp.send_template('256700000000', 'order_confirmation', [
-            {'type': 'body', 'parameters': [{'type': 'text', 'text': 'John'}]},
-        ])
+        self.client.whatsapp.send_template(
+            '256700000000', 'fee_reminder', ['John', 'UGX 50,000'],
+            header={'type': 'document', 'url': 'https://files.example.com/r.pdf', 'filename': 'r.pdf'},
+        )
 
         self.assertEqual(calls[0]['url'], 'https://gateway.test/api/whatsapp/send')
-        self.assertEqual(calls[1]['json']['template'], 'order_confirmation')
-        self.assertEqual(calls[1]['json']['language'], 'en_US')
+        self.assertEqual(calls[1]['json']['template'], 'fee_reminder')
+        self.assertEqual(calls[1]['json']['variables'], ['John', 'UGX 50,000'])
+        self.assertEqual(calls[1]['json']['header']['type'], 'document')
+        self.assertNotIn('components', calls[1]['json'])
+
+    def test_the_old_components_structure_is_refused_with_an_explanation(self):
+        self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaisesRegex(ValidationException, 'plain list'):
+            self.client.whatsapp.send_template('256700000000', 'order_confirmation', [
+                {'type': 'body', 'parameters': [{'type': 'text', 'text': 'John'}]},
+            ])
+
+    def test_a_flow_is_sent_as_an_interactive_message(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        self.client.whatsapp.send_flow('256700000000', 'spa_booking', 'Book your next session', 'Book now', screen='BOOKING')
+
+        self.assertEqual(calls[0]['json']['flow'], {
+            'name': 'spa_booking', 'body': 'Book your next session', 'button': 'Book now', 'screen': 'BOOKING',
+        })
+
+    def test_whatsapp_templates_flows_and_received_messages_hit_the_right_routes(self):
+        calls = self.fake_request(*([FakeResponse(payload={'success': True})] * 8 + [FakeResponse(text='%PDF-1.4')]))
+        whatsapp = self.client.whatsapp
+
+        whatsapp.create_template({'name': 'fee_reminder'})
+        whatsapp.list_templates('approved')
+        whatsapp.get_template(4, refresh=True)
+        whatsapp.delete_template(4)
+        whatsapp.create_flow({'name': 'spa_booking'})
+        whatsapp.update_flow(3, {'endpoint_url': 'https://spa.example.com/flow'})
+        whatsapp.publish_flow(3)
+        whatsapp.received(since='2026-10-07')
+        media = whatsapp.download_media(7)
+
+        self.assertEqual([(c['method'], c['url'].replace('https://gateway.test/api', ''), c['params']) for c in calls], [
+            ('POST', '/whatsapp/templates', None),
+            ('GET', '/whatsapp/templates', {'status': 'approved'}),
+            ('GET', '/whatsapp/templates/4', {'refresh': 1}),
+            ('DELETE', '/whatsapp/templates/4', None),
+            ('POST', '/whatsapp/flows', None),
+            ('PUT', '/whatsapp/flows/3', None),
+            ('POST', '/whatsapp/flows/3/publish', None),
+            ('GET', '/whatsapp/received', {'since': '2026-10-07'}),
+            ('GET', '/whatsapp/received/7/media', None),
+        ])
+        self.assertEqual(media, b'%PDF-1.4')
 
     def test_mobile_money_sends_the_note_the_gateway_reads(self):
         calls = self.fake_request(FakeResponse(payload={}))

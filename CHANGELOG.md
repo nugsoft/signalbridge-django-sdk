@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **WhatsApp, fully.** `send_template()` now takes the template's variables as a
+  plain list, with `header` for templates that start with a document, image or
+  video, and `flow` data for a template's Flow button. New: `send_flow()`;
+  `list_templates()`, `get_template()`, `create_template()`, `delete_template()`;
+  `list_flows()`, `get_flow()`, `create_flow()`, `update_flow()`, `publish_flow()`,
+  `regenerate_flow_secret()`, `delete_flow()`; `received()`, `get_received()` and
+  `download_media()` (bytes) for what customers send you. SignalBridge holds every
+  WhatsApp credential and does WhatsApp's Flow encryption, so none of this
+  needs Meta access. Flow data calls forwarded to your endpoint verify with the
+  existing webhook signature helper.
+
 ### Changed
+- `send_template()`'s third argument is now the variables
+  (`['John', 'UGX 50,000']`), not Meta's `components` structure — the gateway
+  builds that. Passing the old structure fails with an explanation. WhatsApp
+  was unreleased on the gateway, so no working integration relied on it.
 - **`sender_id` no longer has any effect.** The gateway now sends every message
   as `NUGSOFT`, the only sender ID registered with its vendors, and ignores any
   `sender_id` it is given. The option is still accepted so existing calls keep
