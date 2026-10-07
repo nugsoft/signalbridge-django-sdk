@@ -138,16 +138,31 @@ class SmsChannel(BaseChannel):
 
 
 class WhatsAppChannel(BaseChannel):
+    """
+    WhatsApp through SignalBridge.
+
+    WhatsApp only lets a business start a conversation with a template it has
+    approved, so the flow is: create_template() once, wait for the
+    template.approved webhook, then send_template() as often as needed. Free
+    text (send()) and Flows (send_flow()) are delivered only within 24 hours
+    of the person's last message. SignalBridge holds every WhatsApp
+    credential and handles Flow encryption — nothing here needs Meta access.
+    """
+
+    # -- Sending ---------------------------------------------------------
+
     def send(
         self,
         recipient: str,
         message: str,
         metadata: Optional[Dict] = None,
-        is_test: bool = False,
+        scheduled_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Send a plain-text WhatsApp message."""
-        if not recipient or not recipient.strip():
-            raise ValidationException("Recipient is required")
+        """
+        Send free text. WhatsApp delivers it only within 24 hours of the
+        person's last message; to start a conversation use send_template().
+        """
+        self._require_recipient(recipient)
 
         if not message or not message.strip():
             raise ValidationException("Message is required")
@@ -158,38 +173,172 @@ class WhatsAppChannel(BaseChannel):
         return self._request('POST', '/whatsapp/send', json={
             'recipient': recipient,
             'message': message,
-            'metadata': metadata or {},
-            'is_test': is_test,
+            **self._common(metadata, scheduled_at),
         })
 
     def send_template(
         self,
         recipient: str,
         template_name: str,
-        components: Optional[List[Dict]] = None,
-        language: str = 'en_US',
+        variables: Optional[List[str]] = None,
+        language: Optional[str] = None,
+        header: Optional[Dict] = None,
+        flow: Optional[Dict] = None,
         metadata: Optional[Dict] = None,
-        is_test: bool = False,
+        scheduled_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
-        Send a WhatsApp template message (pre-approved by Meta).
+        Send one of your approved templates.
 
-        Required for starting a conversation outside the 24-hour window.
+        :param variables: Values for {{1}}, {{2}}, ... in order (the code, for
+            an authentication template)
+        :param header: For a template that starts with a file:
+            {"type": "document"|"image"|"video", "url": ..., "filename": ...}
+        :param flow: For a template with a Flow button: {"data": {...}}
         """
-        if not recipient or not recipient.strip():
-            raise ValidationException("Recipient is required")
+        self._require_recipient(recipient)
 
         if not template_name or not template_name.strip():
             raise ValidationException("Template name is required")
 
-        return self._request('POST', '/whatsapp/send', json={
+        variables = list(variables or [])
+
+        if any(isinstance(value, (dict, list)) for value in variables):
+            raise ValidationException(
+                "send_template() takes the variables as a plain list, e.g. ['John', 'UGX 50,000']. "
+                "The Meta \"components\" structure is built by SignalBridge."
+            )
+
+        payload = {
             'recipient': recipient,
             'template': template_name,
-            'components': components or [],
-            'language': language,
-            'metadata': metadata or {},
-            'is_test': is_test,
+            'variables': [str(value) for value in variables],
+            **self._common(metadata, scheduled_at),
+        }
+
+        for key, value in (('language', language), ('header', header), ('flow', flow)):
+            if value is not None:
+                payload[key] = value
+
+        return self._request('POST', '/whatsapp/send', json=payload)
+
+    def send_flow(
+        self,
+        recipient: str,
+        flow_name: str,
+        body: str,
+        button: str,
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+        screen: Optional[str] = None,
+        data: Optional[Dict] = None,
+        metadata: Optional[Dict] = None,
+        scheduled_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Send one of your published Flows as an interactive message (within 24
+        hours of the person's last message). The answers arrive as a
+        flow.completed webhook.
+
+        :param screen: Open on this screen; left out, your data endpoint is asked
+        """
+        self._require_recipient(recipient)
+
+        flow = {'name': flow_name, 'body': body, 'button': button}
+
+        for key, value in (('header', header), ('footer', footer), ('screen', screen), ('data', data)):
+            if value is not None:
+                flow[key] = value
+
+        return self._request('POST', '/whatsapp/send', json={
+            'recipient': recipient,
+            'flow': flow,
+            **self._common(metadata, scheduled_at),
         })
+
+    # -- Templates -------------------------------------------------------
+
+    def list_templates(self, status: Optional[str] = None) -> Dict[str, Any]:
+        """:param status: pending, approved, rejected, paused or disabled"""
+        return self._request('GET', '/whatsapp/templates', params={'status': status} if status else None)
+
+    def get_template(self, template_id: int, refresh: bool = False) -> Dict[str, Any]:
+        """:param refresh: Ask WhatsApp for the latest review status"""
+        return self._request('GET', '/whatsapp/templates/{}'.format(template_id), params={'refresh': 1} if refresh else None)
+
+    def create_template(self, template: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Submit a template for WhatsApp's review: name, category
+        (utility|marketing|authentication), language, body, examples, header,
+        footer, buttons — or, for authentication, code_expiration_minutes.
+        """
+        return self._request('POST', '/whatsapp/templates', json=template)
+
+    def delete_template(self, template_id: int) -> Dict[str, Any]:
+        return self._request('DELETE', '/whatsapp/templates/{}'.format(template_id))
+
+    # -- Flows -----------------------------------------------------------
+
+    def list_flows(self) -> Dict[str, Any]:
+        return self._request('GET', '/whatsapp/flows')
+
+    def get_flow(self, flow_id: int, refresh: bool = False) -> Dict[str, Any]:
+        return self._request('GET', '/whatsapp/flows/{}'.format(flow_id), params={'refresh': 1} if refresh else None)
+
+    def create_flow(self, flow: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a Flow as a draft from its JSON (name, categories, flow_json,
+        endpoint_url). Give endpoint_url if it fetches live data: SignalBridge
+        forwards those calls there as plain JSON, signed with the
+        endpoint_secret in the response (shown once).
+        """
+        return self._request('POST', '/whatsapp/flows', json=flow)
+
+    def update_flow(self, flow_id: int, changes: Dict[str, Any]) -> Dict[str, Any]:
+        """:param changes: flow_json (drafts only), endpoint_url"""
+        return self._request('PUT', '/whatsapp/flows/{}'.format(flow_id), json=changes)
+
+    def publish_flow(self, flow_id: int) -> Dict[str, Any]:
+        return self._request('POST', '/whatsapp/flows/{}/publish'.format(flow_id))
+
+    def regenerate_flow_secret(self, flow_id: int) -> Dict[str, Any]:
+        return self._request('POST', '/whatsapp/flows/{}/regenerate-secret'.format(flow_id))
+
+    def delete_flow(self, flow_id: int) -> Dict[str, Any]:
+        """Delete a draft, or retire a published Flow."""
+        return self._request('DELETE', '/whatsapp/flows/{}'.format(flow_id))
+
+    # -- Received messages -----------------------------------------------
+
+    def received(self, **filters) -> Dict[str, Any]:
+        """Messages customers sent you, newest first. Filters: from, type, since, per_page, page."""
+        return self._request('GET', '/whatsapp/received', params=filters or None)
+
+    def get_received(self, message_id: int) -> Dict[str, Any]:
+        return self._request('GET', '/whatsapp/received/{}'.format(message_id))
+
+    def download_media(self, message_id: int) -> bytes:
+        """The file a customer sent (photo, document, voice note, video), as bytes."""
+        return self._request('GET', '/whatsapp/received/{}/media'.format(message_id), timeout=120, binary=True)
+
+    # -- Plumbing --------------------------------------------------------
+
+    @staticmethod
+    def _require_recipient(recipient: str) -> None:
+        if not recipient or not recipient.strip():
+            raise ValidationException("Recipient is required")
+
+    @staticmethod
+    def _common(metadata: Optional[Dict], scheduled_at: Optional[datetime]) -> Dict[str, Any]:
+        common = {}
+
+        if metadata is not None:
+            common['metadata'] = metadata
+
+        if scheduled_at is not None:
+            common['scheduled_at'] = scheduled_at.isoformat() if hasattr(scheduled_at, 'isoformat') else scheduled_at
+
+        return common
 
 
 class MobileMoneyChannel(BaseChannel):

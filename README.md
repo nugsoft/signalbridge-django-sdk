@@ -335,13 +335,73 @@ Mirrors the PHP and Laravel SDKs:
 
 ```python
 client.sms            # send, send_batch, status, messages
-client.whatsapp       # send, send_template
+client.whatsapp       # templates, free text, Flows, received messages
 client.mobile_money   # initiate, verify
 client.ussd           # planned, not live on the gateway yet
 ```
 
 The flat methods (`send_sms()`, `send_batch()`, …) are kept and proxy to the
 channels, so existing code keeps working.
+
+### WhatsApp
+
+WhatsApp only lets a business **start** a conversation with a **template** it has
+approved: submit one, wait for approval, then send it as often as you like. Free text
+and Flows are delivered only within **24 hours of the person's last message to you**.
+SignalBridge holds every WhatsApp credential and does all of WhatsApp's encryption.
+
+```python
+whatsapp = client.whatsapp
+
+# Once: submit a template. A template.approved webhook arrives when WhatsApp approves it.
+whatsapp.create_template({
+    'name': 'fee_reminder',
+    'category': 'utility',   # utility | marketing | authentication
+    'body': 'Hello {{1}}, your fee balance is {{2}}. Please pay by Friday.',
+    'examples': ['John', 'UGX 50,000'],
+})
+
+# Then send it — the variables as a plain list
+whatsapp.send_template('256700000000', 'fee_reminder', ['John', 'UGX 50,000'])
+
+# A template that starts with a document or image takes the file as a link
+whatsapp.send_template('256700000000', 'weekly_report', ['Kampala branch'],
+                       header={'type': 'document', 'url': 'https://files.example.com/report.pdf', 'filename': 'report.pdf'})
+
+# Within 24 hours of their last message: free text, or a Flow
+whatsapp.send('256700000000', 'Thanks — we have received your payment.')
+whatsapp.send_flow('256700000000', 'spa_booking', 'Book your next session', 'Book now')
+
+# What customers sent you, and their files
+whatsapp.received(since='2026-10-07T00:00:00+03:00')
+data = whatsapp.download_media(received_message_id)   # bytes
+```
+
+**Flows** are forms customers fill in inside WhatsApp. Create one from the JSON
+WhatsApp's Flow Builder exports with `create_flow({'name': …, 'categories': […],
+'flow_json': …, 'endpoint_url': …})`, then `publish_flow(flow_id)`. Answers arrive as a
+`flow.completed` webhook. If the Flow fetches live data, SignalBridge decrypts
+WhatsApp's calls and posts them to your `endpoint_url` as plain JSON, signed with the
+`endpoint_secret` returned when you created it:
+
+```python
+from django.http import JsonResponse, HttpResponseForbidden
+from signalbridge.webhooks import verify_request
+
+def flow_endpoint(request):
+    if not verify_request(request, settings.SIGNALBRIDGE_FLOW_SECRET):
+        return HttpResponseForbidden()
+
+    call = json.loads(request.body)   # event, flow, action, screen, data, flow_token, message_id, recipient
+    return JsonResponse({'screen': 'SLOTS', 'data': {'slots': ['10:00', '11:00']}})
+```
+
+Reply within a few seconds — WhatsApp waits about ten.
+
+WhatsApp webhook events: `message.sent`, `message.delivered`, `message.read`,
+`message.failed`, `message.received`, `flow.completed`, `template.approved`,
+`template.rejected`, `template.paused`, `template.disabled`. Template and Flow events
+are not in the default subscription.
 
 ### Token abilities
 
@@ -368,7 +428,8 @@ except InsufficientPermissionsException as e:
 | `webhooks:read` / `webhooks:write` | reading / changing webhooks |
 | `export:read` | `export_messages()`, `export_transactions()` |
 
-> `whatsapp:send`, `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the WhatsApp and mobile money channels are unreleased, so reaching either needs a full-access (`*`) token.
+> `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the mobile money channel is unreleased, so reaching it needs a full-access (`*`) token.
+The WhatsApp abilities are `whatsapp:send`, `whatsapp:templates`, `whatsapp:flows` and `whatsapp:read`.
 
 ### Delivery status
 
