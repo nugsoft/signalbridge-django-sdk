@@ -8,7 +8,7 @@ Django SDK for SignalBridge SMS Gateway.
 :license: MIT, see LICENSE for more details.
 """
 
-__version__ = '2.0.0'
+__version__ = '3.0.0'
 __author__ = 'Nugsoft'
 
 # default_app_config was removed in Django 4.1 and has had no effect since 3.2:
