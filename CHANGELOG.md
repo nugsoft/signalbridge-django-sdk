@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-07
+
+A major version because `send_template()` now takes the template's variables
+rather than Meta's `components` structure.
+
 ### Added
 - **WhatsApp, fully.** `send_template()` now takes the template's variables as a
   plain list, with `header` for templates that start with a document, image or
