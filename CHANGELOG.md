@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Agent guide: setting up through the MCP server.** The guide now covers the
+  server's setup tools: tokens that cannot send, webhooks, WhatsApp templates
+  and Flows. It says which to use for each job, to put a secret they return
+  straight into the product's secret store, to ask the developer before a change
+  that cannot be undone, and not to send a template before WhatsApp approves it.
 - **Agent guide.** `signalbridge/AGENTS.md` now sends agents to the SignalBridge MCP server to
   read the account and check a send before writing code for it. It also lists
   the WhatsApp token abilities (they can be granted now), shows how to send a
