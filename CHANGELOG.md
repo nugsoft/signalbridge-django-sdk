@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Agent guide.** `signalbridge/AGENTS.md` now sends agents to the SignalBridge MCP server to
+  read the account and check a send before writing code for it. It also lists
+  the WhatsApp token abilities (they can be granted now), shows how to send a
+  template instead of warning against it, gives every webhook event, and says
+  not to rely on their order: `message.sent` can be skipped.
+  It also corrects `signalbridge_send_sms --test`: the message is still sent
+  and charged, and the flag only labels it.
+
 ## [3.0.0] - 2026-10-07
 
 A major version because `send_template()` now takes the template's variables
