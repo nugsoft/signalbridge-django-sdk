@@ -214,6 +214,77 @@ class ChannelTests(ClientTestCase):
             'name': 'spa_booking', 'body': 'Book your next session', 'button': 'Book now', 'screen': 'BOOKING',
         })
 
+    def test_a_file_is_sent_on_its_own(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        self.client.whatsapp.send_media(
+            '256700000000', 'document', 'https://files.example.com/report.pdf',
+            caption='Term 2 report', filename='report.pdf',
+        )
+
+        self.assertEqual(calls[0]['url'], 'https://gateway.test/api/whatsapp/send')
+        self.assertEqual(calls[0]['json']['media'], {
+            'type': 'document', 'url': 'https://files.example.com/report.pdf', 'caption': 'Term 2 report', 'filename': 'report.pdf',
+        })
+        self.assertNotIn('message', calls[0]['json'])
+
+    def test_a_file_of_an_unknown_type_or_on_plain_http_is_refused_before_sending(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        for media_type, url in (('gif', 'https://example.com/a.gif'), ('image', 'http://example.com/a.jpg')):
+            with self.assertRaises(ValidationException):
+                self.client.whatsapp.send_media('256700000000', media_type, url)
+
+        self.assertEqual(calls, [])
+
+    def test_reply_buttons_are_sent_with_their_ids_and_a_text_header(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        self.client.whatsapp.send_buttons(
+            '256700000000', 'Can you make it?',
+            {'confirm_4821': 'Confirm', 'reschedule_4821': 'Reschedule'},
+            header='Tomorrow, 10:00', footer='Acme Clinic',
+        )
+
+        self.assertEqual(calls[0]['json']['interactive'], {
+            'type': 'buttons',
+            'body': 'Can you make it?',
+            'buttons': [{'id': 'confirm_4821', 'title': 'Confirm'}, {'id': 'reschedule_4821', 'title': 'Reschedule'}],
+            'header': {'type': 'text', 'text': 'Tomorrow, 10:00'},
+            'footer': 'Acme Clinic',
+        })
+
+    def test_more_than_three_buttons_are_refused_before_sending(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaisesRegex(ValidationException, 'send_list'):
+            self.client.whatsapp.send_buttons('256700000000', 'Pick', {'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D'})
+
+        self.assertEqual(calls, [])
+
+    def test_a_list_and_a_link_button_are_sent_as_interactive_messages(self):
+        calls = self.fake_request(FakeResponse(payload={}), FakeResponse(payload={}))
+
+        self.client.whatsapp.send_list('256700000000', 'Which branch?', 'Choose a branch', [
+            {'title': 'Kampala', 'rows': [{'id': 'kla_central', 'title': 'Central', 'description': 'Open until 8pm'}]},
+        ])
+        self.client.whatsapp.send_link_button('256700000000', 'Your invoice is ready.', 'Pay now', 'https://pay.example.com/inv/42')
+
+        self.assertEqual(calls[0]['json']['interactive']['type'], 'list')
+        self.assertEqual(calls[0]['json']['interactive']['button'], 'Choose a branch')
+        self.assertEqual(calls[0]['json']['interactive']['sections'][0]['rows'][0]['id'], 'kla_central')
+        self.assertEqual(calls[1]['json']['interactive'], {
+            'type': 'cta_url', 'body': 'Your invoice is ready.', 'button': 'Pay now', 'url': 'https://pay.example.com/inv/42',
+        })
+
+    def test_a_list_of_more_than_ten_options_is_refused_before_sending(self):
+        self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaises(ValidationException):
+            self.client.whatsapp.send_list('256700000000', 'Pick', 'Open', [
+                {'title': 'All', 'rows': [{'id': 'r{}'.format(i), 'title': 'R{}'.format(i)} for i in range(11)]},
+            ])
+
     def test_whatsapp_templates_flows_and_received_messages_hit_the_right_routes(self):
         calls = self.fake_request(*([FakeResponse(payload={'success': True})] * 8 + [FakeResponse(text='%PDF-1.4')]))
         whatsapp = self.client.whatsapp

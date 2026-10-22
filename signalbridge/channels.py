@@ -6,7 +6,7 @@ Each channel is a thin wrapper over the transport on ``SignalBridgeClient``:
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from . import segments
 from .exceptions import ServiceUnavailableException, ValidationException
@@ -144,8 +144,9 @@ class WhatsAppChannel(BaseChannel):
     WhatsApp only lets a business start a conversation with a template it has
     approved, so the flow is: create_template() once, wait for the
     template.approved webhook, then send_template() as often as needed. Free
-    text (send()) and Flows (send_flow()) are delivered only within 24 hours
-    of the person's last message. SignalBridge holds every WhatsApp
+    text (send()), files (send_media()), reply buttons, lists and link buttons
+    (send_buttons(), send_list(), send_link_button()) and Flows (send_flow())
+    are delivered only within 24 hours of the person's last message. SignalBridge holds every WhatsApp
     credential and handles Flow encryption — nothing here needs Meta access.
     """
 
@@ -253,6 +254,148 @@ class WhatsAppChannel(BaseChannel):
         return self._request('POST', '/whatsapp/send', json={
             'recipient': recipient,
             'flow': flow,
+            **self._common(metadata, scheduled_at),
+        })
+
+    #: The files WhatsApp sends as a message of their own.
+    MEDIA_TYPES = ('image', 'document', 'video', 'audio', 'sticker')
+
+    def send_media(
+        self,
+        recipient: str,
+        media_type: str,
+        url: str,
+        caption: Optional[str] = None,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        scheduled_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Send a file on its own: an image, document, video, audio (a voice
+        note, say) or sticker. WhatsApp downloads it from the https link, and
+        delivers it only within 24 hours of the person's last message.
+
+        :param caption: Shown under an image, video or document
+        :param filename: The name the recipient sees, for a document
+        """
+        self._require_recipient(recipient)
+
+        if media_type not in self.MEDIA_TYPES:
+            raise ValidationException("The media type must be one of: " + ", ".join(self.MEDIA_TYPES))
+
+        if not url or not url.startswith('https://'):
+            raise ValidationException("The media URL must be a public https link WhatsApp can download the file from")
+
+        media = {'type': media_type, 'url': url}
+
+        for key, value in (('caption', caption), ('filename', filename)):
+            if value is not None:
+                media[key] = value
+
+        return self._request('POST', '/whatsapp/send', json={
+            'recipient': recipient,
+            'media': media,
+            **self._common(metadata, scheduled_at),
+        })
+
+    def send_buttons(
+        self,
+        recipient: str,
+        body: str,
+        buttons: Union[Dict[str, str], List[Dict[str, str]]],
+        header: Optional[Union[str, Dict]] = None,
+        footer: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        scheduled_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Send up to three reply buttons (within 24 hours of the person's last
+        message). A tap arrives as a message.received webhook whose
+        content.reply_id is the button's id.
+
+        :param buttons: {"confirm_4821": "Confirm", ...}, or [{"id": ..., "title": ...}, ...]
+        :param header: Text, or {"type": "image"|"video"|"document", "url": ...}
+        """
+        self._require_recipient(recipient)
+
+        if isinstance(buttons, dict):
+            buttons = [{'id': str(key), 'title': str(title)} for key, title in buttons.items()]
+
+        if not buttons or len(buttons) > 3:
+            raise ValidationException("WhatsApp allows 1 to 3 reply buttons. Use send_list() for more options.")
+
+        return self._send_interactive(recipient, {'type': 'buttons', 'body': body, 'buttons': list(buttons)}, header, footer, metadata, scheduled_at)
+
+    def send_list(
+        self,
+        recipient: str,
+        body: str,
+        button: str,
+        sections: List[Dict[str, Any]],
+        header: Optional[str] = None,
+        footer: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        scheduled_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Send a list: one button that opens up to 10 options, in sections
+        (within 24 hours of the person's last message). A pick arrives as a
+        message.received webhook whose content.reply_id is the option's id.
+
+        :param sections: [{"title": "Kampala", "rows": [{"id": ..., "title": ..., "description": ...}]}]
+        :param header: Text only
+        """
+        self._require_recipient(recipient)
+
+        rows = sum(len(section.get('rows') or []) for section in sections or [])
+
+        if rows == 0 or rows > 10:
+            raise ValidationException("A WhatsApp list has 1 to 10 options across all its sections.")
+
+        return self._send_interactive(recipient, {'type': 'list', 'body': body, 'button': button, 'sections': sections}, header, footer, metadata, scheduled_at)
+
+    def send_link_button(
+        self,
+        recipient: str,
+        body: str,
+        button: str,
+        url: str,
+        header: Optional[Union[str, Dict]] = None,
+        footer: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        scheduled_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Send a button that opens a link, without showing the URL (within 24
+        hours of the person's last message).
+
+        :param header: Text, or {"type": "image"|"video"|"document", "url": ...}
+        """
+        self._require_recipient(recipient)
+
+        if not url or not url.startswith('https://'):
+            raise ValidationException("The link must be an https URL")
+
+        return self._send_interactive(recipient, {'type': 'cta_url', 'body': body, 'button': button, 'url': url}, header, footer, metadata, scheduled_at)
+
+    def _send_interactive(
+        self,
+        recipient: str,
+        interactive: Dict[str, Any],
+        header: Optional[Union[str, Dict]],
+        footer: Optional[str],
+        metadata: Optional[Dict],
+        scheduled_at: Optional[datetime],
+    ) -> Dict[str, Any]:
+        if header is not None:
+            interactive['header'] = {'type': 'text', 'text': header} if isinstance(header, str) else header
+
+        if footer is not None:
+            interactive['footer'] = footer
+
+        return self._request('POST', '/whatsapp/send', json={
+            'recipient': recipient,
+            'interactive': interactive,
             **self._common(metadata, scheduled_at),
         })
 
