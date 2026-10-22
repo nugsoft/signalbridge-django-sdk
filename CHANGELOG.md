@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **WhatsApp files, buttons and lists.** `whatsapp.send_media()` sends an
+  image, document, video, audio (a voice note) or sticker from a public https
+  link, with a caption or file name where WhatsApp allows one.
+  `send_buttons()` sends up to 3 reply buttons, keyed by your ids;
+  `send_list()` a list of up to 10 options; `send_link_button()` a button that
+  opens a link. Like free text, all are delivered only within 24 hours of the
+  person's last message. A tap arrives as `message.received` with
+  `content.reply_id` (your id), `content.reply_type` and
+  `reply_to_message_id`. Needs the gateway's media and interactive release.
+
+### Changed
+- README: the token abilities table now lists the WhatsApp abilities and their
+  methods, and every webhook event is listed, `message.permanently_failed`
+  included, with a note that they can arrive out of order.
+
 ### Changed
 - **Agent guide: setting up through the MCP server.** The guide now covers the
   server's setup tools: tokens that cannot send, webhooks, WhatsApp templates

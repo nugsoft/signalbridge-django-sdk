@@ -335,7 +335,7 @@ Mirrors the PHP and Laravel SDKs:
 
 ```python
 client.sms            # send, send_batch, status, messages
-client.whatsapp       # templates, free text, Flows, received messages
+client.whatsapp       # templates, free text, files, buttons and lists, Flows, received messages
 client.mobile_money   # initiate, verify
 client.ussd           # planned, not live on the gateway yet
 ```
@@ -346,8 +346,9 @@ channels, so existing code keeps working.
 ### WhatsApp
 
 WhatsApp only lets a business **start** a conversation with a **template** it has
-approved: submit one, wait for approval, then send it as often as you like. Free text
-and Flows are delivered only within **24 hours of the person's last message to you**.
+approved: submit one, wait for approval, then send it as often as you like. Free text,
+files, buttons, lists and Flows are delivered only within **24 hours of the person's
+last message to you**.
 SignalBridge holds every WhatsApp credential and does all of WhatsApp's encryption.
 
 ```python
@@ -368,14 +369,44 @@ whatsapp.send_template('256700000000', 'fee_reminder', ['John', 'UGX 50,000'])
 whatsapp.send_template('256700000000', 'weekly_report', ['Kampala branch'],
                        header={'type': 'document', 'url': 'https://files.example.com/report.pdf', 'filename': 'report.pdf'})
 
-# Within 24 hours of their last message: free text, or a Flow
+# Within 24 hours of their last message: free text…
 whatsapp.send('256700000000', 'Thanks — we have received your payment.')
+
+# …a file on its own: image, document, video, audio (a voice note) or sticker.
+# WhatsApp downloads it from the https link.
+whatsapp.send_media('256700000000', 'document', 'https://files.example.com/report.pdf',
+                    caption='Term 2 report',    # image, video and document only
+                    filename='report.pdf')      # document only
+
+# …up to 3 reply buttons. The keys are your ids: a tap comes back with one.
+whatsapp.send_buttons('256700000000', 'Your appointment is tomorrow at 10:00. Can you make it?',
+                      {'confirm_4821': 'Confirm', 'reschedule_4821': 'Reschedule'},
+                      header='Acme Clinic', footer='Reply by 6pm')
+
+# …a list of up to 10 options, behind one button
+whatsapp.send_list('256700000000', 'Which branch suits you?', 'Choose a branch', [
+    {'title': 'Kampala', 'rows': [
+        {'id': 'kla_central', 'title': 'Central', 'description': 'Open until 8pm'},
+        {'id': 'kla_ntinda', 'title': 'Ntinda'},
+    ]},
+])
+
+# …a button that opens a link
+whatsapp.send_link_button('256700000000', 'Your invoice is ready.', 'Pay now', 'https://pay.example.com/inv/42')
+
+# …or a Flow
 whatsapp.send_flow('256700000000', 'spa_booking', 'Book your next session', 'Book now')
 
 # What customers sent you, and their files
 whatsapp.received(since='2026-10-07T00:00:00+03:00')
 data = whatsapp.download_media(received_message_id)   # bytes
 ```
+
+**Buttons and lists**: when the customer taps a button or picks an option, a
+`message.received` webhook arrives with `type` `interactive`, the option's title as
+`text`, `content.reply_type` (`button` or `list`), `content.reply_id` (the id you
+gave) and `reply_to_message_id` (the message they answered). Put what you need to
+act in the id — `confirm_4821` says what and which. A link button sends nothing back.
 
 **Flows** are forms customers fill in inside WhatsApp. Create one from the JSON
 WhatsApp's Flow Builder exports with `create_flow({'name': …, 'categories': […],
@@ -427,9 +458,12 @@ except InsufficientPermissionsException as e:
 | `balance:request-credit` | `request_credit()` |
 | `webhooks:read` / `webhooks:write` | reading / changing webhooks |
 | `export:read` | `export_messages()`, `export_transactions()` |
+| `whatsapp:send` | `whatsapp.send()`, `send_template()`, `send_media()`, `send_buttons()`, `send_list()`, `send_link_button()`, `send_flow()` |
+| `whatsapp:templates` | `whatsapp.list_templates()`, `get_template()`, `create_template()`, `delete_template()` |
+| `whatsapp:flows` | `whatsapp.list_flows()`, `create_flow()`, `update_flow()`, `publish_flow()`, … |
+| `whatsapp:read` | `whatsapp.received()`, `get_received()`, `download_media()` |
 
 > `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the mobile money channel is unreleased, so reaching it needs a full-access (`*`) token.
-The WhatsApp abilities are `whatsapp:send`, `whatsapp:templates`, `whatsapp:flows` and `whatsapp:read`.
 
 ### Delivery status
 
@@ -446,6 +480,13 @@ print(messages['summary']['by_status'])
 ```
 
 ### Webhooks
+
+Events: `message.sent`, `message.delivered`, `message.read` (WhatsApp),
+`message.failed`, `message.permanently_failed` (every retry exhausted, charge
+refunded), `message.received` and `flow.completed` (WhatsApp), and
+`template.approved`, `template.rejected`, `template.paused`, `template.disabled`.
+Subscribe to `*` for all. They can arrive out of order, and `message.sent` can be
+skipped when the outcome is already known.
 
 ```python
 created = client.create_webhook('https://your-app.example/webhooks/sms', ['message.delivered'])
