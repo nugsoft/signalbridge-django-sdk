@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- The status examples show `read_at`: a WhatsApp message that was opened
+  stays `delivered`, and `read_at` says when.
+
+### Added
+- **Sandbox.** `SIGNALBRIDGE_SANDBOX = True` points the client at the sandbox —
+  the same API with every provider simulated — and `client.is_sandbox` says
+  which you have (`SIGNALBRIDGE_URL`, when set, still wins).
+  `signalbridge.sandbox.MagicNumbers` names the numbers that drive a message
+  down each path. `client.sandbox_tools` simulates a customer's WhatsApp
+  message (`customer_message()`), moves a message to an outcome
+  (`set_message_status()`), adds test credit (`add_credit()`) and lists the
+  numbers (`magic_numbers()`). Called on live, the tools say they exist only
+  in the sandbox.
+
 ### Added
 - **WhatsApp files, buttons and lists.** `whatsapp.send_media()` sends an
   image, document, video, audio (a voice note) or sticker from a public https
