@@ -124,9 +124,25 @@ with patch.object(client.session, 'request', return_value=response):
     client.send_sms('256700000000', 'Test')
 ```
 
-There is no test mode. `is_test=True` only labels a message — it is still
-delivered and charged. For a manual check against the real gateway, use a number
-you control.
+`is_test=True` only labels a message — it is still delivered and charged.
+
+## Build against the sandbox
+
+For development and manual testing, use the sandbox, where every provider is
+simulated and nothing reaches a real phone: `SIGNALBRIDGE_SANDBOX = True` with a
+sandbox token (an account at https://sandbox.signal-bridge.nugsoftapps.net/register;
+live tokens do not work there, nor sandbox tokens on live).
+
+- Drive each path with `signalbridge.sandbox.MagicNumbers` (`DELIVERED`,
+  `FAILED`, `NO_REPORT`, `REJECTED`, `SLOW`, `READ`, `OUTSIDE_WINDOW`) rather
+  than real numbers.
+- Simulate what a customer would do with
+  `client.sandbox_tools.customer_message()`, and an outcome with
+  `set_message_status()`.
+- Keep `SIGNALBRIDGE_SANDBOX` out of production settings. Switching to live is a
+  settings change, never a code change.
+- Automated tests still patch the session: they must not depend on the sandbox
+  being reachable either.
 
 ## Never calculate cost yourself
 

@@ -82,6 +82,55 @@ re-copy on upgrade:
 cat "$(python -c 'import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / "AGENTS.md")')" >> AGENTS.md
 ```
 
+## Sandbox
+
+Build and test against the **sandbox**: the same API with every provider
+simulated. Nothing reaches a real phone or wallet, and the credit is free. Sign
+up at https://sandbox.signal-bridge.nugsoftapps.net/register and create a token
+there — sandbox accounts and tokens are separate from live ones.
+
+```python
+# settings.py (development)
+SIGNALBRIDGE_SANDBOX = True
+SIGNALBRIDGE_TOKEN = os.environ["SIGNALBRIDGE_TOKEN"]  # a sandbox token
+```
+
+```python
+from signalbridge.client import get_client
+from signalbridge.sandbox import MagicNumbers
+
+client = get_client()
+client.is_sandbox   # True
+
+# Magic numbers drive a message down each path your code handles
+client.send_sms(MagicNumbers.DELIVERED, "Hello")             # delivered within seconds
+client.send_sms(MagicNumbers.FAILED, "Hello")                # accepted, then failed
+client.whatsapp.send(MagicNumbers.OUTSIDE_WINDOW, "Hi")      # fails: outside the 24-hour window
+
+# The sandbox's tools
+tools = client.sandbox_tools
+tools.customer_message(MagicNumbers.DELIVERED, text="Thanks!")          # a customer's WhatsApp reply
+tools.customer_message(MagicNumbers.DELIVERED, type="interactive",       # a tap on your buttons
+                       reply_to_message_id=message_id, reply_id="confirm_4821")
+tools.set_message_status(message_id, "delivered")   # or failed, or read (WhatsApp)
+tools.add_credit()                                  # more test credit
+tools.magic_numbers()                               # every number and what it does
+```
+
+| `MagicNumbers.` | Does |
+|---|---|
+| `DELIVERED` | Delivered within seconds — as is any number not listed |
+| `FAILED` | Accepted, then failed (WhatsApp refunds it; an SMS is not refunded, as on live) |
+| `NO_REPORT` | Stays `sent`: no outcome ever comes |
+| `REJECTED` | Refused by every provider: `permanently_failed` and refunded |
+| `SLOW` | Delivered after a minute |
+| `READ` | WhatsApp: delivered, then read |
+| `OUTSIDE_WINDOW` | WhatsApp: anything but a template fails (Meta 131047) and is refunded |
+
+Webhooks are real in the sandbox: point one at your endpoint to receive signed
+events. To go live, remove `SIGNALBRIDGE_SANDBOX` and use a live token.
+`SIGNALBRIDGE_URL`, when set, wins over `SIGNALBRIDGE_SANDBOX`.
+
 ## Quick Start
 
 ### Basic SMS Sending
