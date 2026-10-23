@@ -270,12 +270,19 @@ client.mobile_money   # initiate, verify
 client.ussd           # unreleased on the gateway
 ```
 
-Mobile money reads `reference` and `note` (the text shown to the payer) only:
+Mobile money reads `note` (the text shown to the payer, at most 100 characters)
+only. SignalBridge assigns the reference; there is no `reference` argument:
 
 ```python
-client.mobile_money.initiate('256700000000', 15000, 'UGX', reference='INV-1', note='Invoice')
-client.mobile_money.verify(transaction_id)
+tx = client.mobile_money.initiate('256700000000', 15000, 'UGX', note='Invoice INV-1')
+reference = tx['data']['reference']   # store it
+client.mobile_money.verify(reference)
 ```
+
+There are no mobile money webhooks yet: poll `verify()`. Until the gateway
+switches collections on, `initiate()` raises `ServiceUnavailableException` — do
+not treat that as a token or client problem. A payment the provider refused
+raises `ValidationException` whose `get_data()` is the transaction.
 
 Start a conversation with an approved template. Free text
 (`client.whatsapp.send()`) is delivered only within 24 hours of the customer's last
@@ -292,7 +299,8 @@ the send is refused with a 422 before anything is charged. With the MCP server
 connected, check the request with `validate_whatsapp` first.
 
 `client.mobile_money.disburse()` raises `ServiceUnavailableException`; the gateway
-exposes no payout endpoint.
+exposes no payout endpoint. Collecting with `initiate()` is built but switched
+off on the gateway for now, so it raises `ServiceUnavailableException` too.
 
 ## Management commands
 
