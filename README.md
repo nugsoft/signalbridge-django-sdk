@@ -521,12 +521,16 @@ except InsufficientPermissionsException as e:
 # needed, because the gateway polls vendors in the background.
 status = client.get_message_status(message_id)
 print(status['data']['status'])      # queued, sent, delivered, failed …
+print(status['data']['read_at'])     # WhatsApp: when it was opened, or None
 
 # A whole batch, by the ids send_batch() returned. 'summary' counts the entire
 # filtered set rather than the current page.
 messages = client.get_messages(ids=[11, 12, 13])
 print(messages['summary']['by_status'])
 ```
+
+A WhatsApp message that was opened stays `delivered` — `read` is not a status.
+`read_at` says when, and the `message.read` webhook tells you as it happens.
 
 ### Webhooks
 
