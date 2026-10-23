@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Mobile money follows the gateway's transaction reference.** The gateway now
+  gives every mobile money transaction its own `reference` and records it before
+  the provider is called. `mobile_money.initiate()` returns it in
+  `data['reference']` (there is no `data['transaction_id']`), and `verify()`
+  takes it. `initiate()` no longer has a `reference` argument — the gateway
+  ignored it — and a `note` over 100 characters is refused before sending.
+  **Breaking** for code that passed `reference=` or read `transaction_id`;
+  mobile money has never been switched on, so no live integration depends on
+  either.
+- **Collections switched off are reported as such.** While the gateway has
+  mobile money collections switched off it answers 403 "Mobile money
+  collections are not available yet."; `initiate()` now raises
+  `ServiceUnavailableException` for it, where it raised `NoClientException`.
+- **A refused payment says why.** A payment the provider refused raises
+  `ValidationException` with the provider's reason in the message, and
+  `get_data()` returns the transaction, reference included.
+
+### Changed
 - **Agent guide: setting up through the MCP server.** The guide now covers the
   server's setup tools: tokens that cannot send, webhooks, WhatsApp templates
   and Flows. It says which to use for each job, to put a secret they return
