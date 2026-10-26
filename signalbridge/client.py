@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from . import segments, webhooks
-from .channels import MobileMoneyChannel, SmsChannel, UssdChannel, WhatsAppChannel
+from .channels import MobileMoneyChannel, SandboxChannel, SmsChannel, UssdChannel, WhatsAppChannel
 from .exceptions import (
     InsufficientBalanceException,
     InsufficientPermissionsException,
@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 #: The production gateway. Override with SIGNALBRIDGE_URL in settings.
 DEFAULT_BASE_URL = 'https://signal-bridge.nugsoftapps.net/api'
+
+#: The sandbox: the same API with every provider simulated, for building and
+#: testing. Its accounts and tokens are separate from live ones.
+SANDBOX_URL = 'https://sandbox.signal-bridge.nugsoftapps.net/api'
 
 #: Methods that may be retried automatically.
 #:
@@ -50,9 +54,12 @@ class SignalBridgeClient:
         timeout: int = 30
     ):
         self.token = token or getattr(settings, 'SIGNALBRIDGE_TOKEN', None)
+        # SIGNALBRIDGE_SANDBOX = True points at the sandbox; SIGNALBRIDGE_URL wins.
+        default_url = SANDBOX_URL if getattr(settings, 'SIGNALBRIDGE_SANDBOX', False) else DEFAULT_BASE_URL
         self.base_url = (
             base_url or
-            getattr(settings, 'SIGNALBRIDGE_URL', DEFAULT_BASE_URL)
+            getattr(settings, 'SIGNALBRIDGE_URL', None) or
+            default_url
         ).rstrip('/')
         self.timeout = timeout
 
@@ -65,6 +72,12 @@ class SignalBridgeClient:
         self.whatsapp = WhatsAppChannel(self)
         self.mobile_money = MobileMoneyChannel(self)
         self.ussd = UssdChannel(self)
+        self.sandbox_tools = SandboxChannel(self)
+
+    @property
+    def is_sandbox(self) -> bool:
+        """Whether this client talks to the sandbox, where nothing reaches a real phone or wallet."""
+        return self.base_url == SANDBOX_URL.rstrip('/')
 
     # -----------------------------
     # SMS (proxies to the channel)
