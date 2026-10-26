@@ -82,6 +82,55 @@ re-copy on upgrade:
 cat "$(python -c 'import signalbridge, pathlib; print(pathlib.Path(signalbridge.__file__).parent / "AGENTS.md")')" >> AGENTS.md
 ```
 
+## Sandbox
+
+Build and test against the **sandbox**: the same API with every provider
+simulated. Nothing reaches a real phone or wallet, and the credit is free. Sign
+up at https://sandbox.signal-bridge.nugsoftapps.net/register and create a token
+there — sandbox accounts and tokens are separate from live ones.
+
+```python
+# settings.py (development)
+SIGNALBRIDGE_SANDBOX = True
+SIGNALBRIDGE_TOKEN = os.environ["SIGNALBRIDGE_TOKEN"]  # a sandbox token
+```
+
+```python
+from signalbridge.client import get_client
+from signalbridge.sandbox import MagicNumbers
+
+client = get_client()
+client.is_sandbox   # True
+
+# Magic numbers drive a message down each path your code handles
+client.send_sms(MagicNumbers.DELIVERED, "Hello")             # delivered within seconds
+client.send_sms(MagicNumbers.FAILED, "Hello")                # accepted, then failed
+client.whatsapp.send(MagicNumbers.OUTSIDE_WINDOW, "Hi")      # fails: outside the 24-hour window
+
+# The sandbox's tools
+tools = client.sandbox_tools
+tools.customer_message(MagicNumbers.DELIVERED, text="Thanks!")          # a customer's WhatsApp reply
+tools.customer_message(MagicNumbers.DELIVERED, type="interactive",       # a tap on your buttons
+                       reply_to_message_id=message_id, reply_id="confirm_4821")
+tools.set_message_status(message_id, "delivered")   # or failed, or read (WhatsApp)
+tools.add_credit()                                  # more test credit
+tools.magic_numbers()                               # every number and what it does
+```
+
+| `MagicNumbers.` | Does |
+|---|---|
+| `DELIVERED` | Delivered within seconds — as is any number not listed |
+| `FAILED` | Accepted, then failed (WhatsApp refunds it; an SMS is not refunded, as on live) |
+| `NO_REPORT` | Stays `sent`: no outcome ever comes |
+| `REJECTED` | Refused by every provider: `permanently_failed` and refunded |
+| `SLOW` | Delivered after a minute |
+| `READ` | WhatsApp: delivered, then read |
+| `OUTSIDE_WINDOW` | WhatsApp: anything but a template fails (Meta 131047) and is refunded |
+
+Webhooks are real in the sandbox: point one at your endpoint to receive signed
+events. To go live, remove `SIGNALBRIDGE_SANDBOX` and use a live token.
+`SIGNALBRIDGE_URL`, when set, wins over `SIGNALBRIDGE_SANDBOX`.
+
 ## Quick Start
 
 ### Basic SMS Sending
@@ -335,7 +384,7 @@ Mirrors the PHP and Laravel SDKs:
 
 ```python
 client.sms            # send, send_batch, status, messages
-client.whatsapp       # templates, free text, Flows, received messages
+client.whatsapp       # templates, free text, files, buttons and lists, Flows, received messages
 client.mobile_money   # initiate, verify
 client.ussd           # planned, not live on the gateway yet
 ```
@@ -346,8 +395,9 @@ channels, so existing code keeps working.
 ### WhatsApp
 
 WhatsApp only lets a business **start** a conversation with a **template** it has
-approved: submit one, wait for approval, then send it as often as you like. Free text
-and Flows are delivered only within **24 hours of the person's last message to you**.
+approved: submit one, wait for approval, then send it as often as you like. Free text,
+files, buttons, lists and Flows are delivered only within **24 hours of the person's
+last message to you**.
 SignalBridge holds every WhatsApp credential and does all of WhatsApp's encryption.
 
 ```python
@@ -368,14 +418,44 @@ whatsapp.send_template('256700000000', 'fee_reminder', ['John', 'UGX 50,000'])
 whatsapp.send_template('256700000000', 'weekly_report', ['Kampala branch'],
                        header={'type': 'document', 'url': 'https://files.example.com/report.pdf', 'filename': 'report.pdf'})
 
-# Within 24 hours of their last message: free text, or a Flow
+# Within 24 hours of their last message: free text…
 whatsapp.send('256700000000', 'Thanks — we have received your payment.')
+
+# …a file on its own: image, document, video, audio (a voice note) or sticker.
+# WhatsApp downloads it from the https link.
+whatsapp.send_media('256700000000', 'document', 'https://files.example.com/report.pdf',
+                    caption='Term 2 report',    # image, video and document only
+                    filename='report.pdf')      # document only
+
+# …up to 3 reply buttons. The keys are your ids: a tap comes back with one.
+whatsapp.send_buttons('256700000000', 'Your appointment is tomorrow at 10:00. Can you make it?',
+                      {'confirm_4821': 'Confirm', 'reschedule_4821': 'Reschedule'},
+                      header='Acme Clinic', footer='Reply by 6pm')
+
+# …a list of up to 10 options, behind one button
+whatsapp.send_list('256700000000', 'Which branch suits you?', 'Choose a branch', [
+    {'title': 'Kampala', 'rows': [
+        {'id': 'kla_central', 'title': 'Central', 'description': 'Open until 8pm'},
+        {'id': 'kla_ntinda', 'title': 'Ntinda'},
+    ]},
+])
+
+# …a button that opens a link
+whatsapp.send_link_button('256700000000', 'Your invoice is ready.', 'Pay now', 'https://pay.example.com/inv/42')
+
+# …or a Flow
 whatsapp.send_flow('256700000000', 'spa_booking', 'Book your next session', 'Book now')
 
 # What customers sent you, and their files
 whatsapp.received(since='2026-10-07T00:00:00+03:00')
 data = whatsapp.download_media(received_message_id)   # bytes
 ```
+
+**Buttons and lists**: when the customer taps a button or picks an option, a
+`message.received` webhook arrives with `type` `interactive`, the option's title as
+`text`, `content.reply_type` (`button` or `list`), `content.reply_id` (the id you
+gave) and `reply_to_message_id` (the message they answered). Put what you need to
+act in the id — `confirm_4821` says what and which. A link button sends nothing back.
 
 **Flows** are forms customers fill in inside WhatsApp. Create one from the JSON
 WhatsApp's Flow Builder exports with `create_flow({'name': …, 'categories': […],
@@ -427,9 +507,12 @@ except InsufficientPermissionsException as e:
 | `balance:request-credit` | `request_credit()` |
 | `webhooks:read` / `webhooks:write` | reading / changing webhooks |
 | `export:read` | `export_messages()`, `export_transactions()` |
+| `whatsapp:send` | `whatsapp.send()`, `send_template()`, `send_media()`, `send_buttons()`, `send_list()`, `send_link_button()`, `send_flow()` |
+| `whatsapp:templates` | `whatsapp.list_templates()`, `get_template()`, `create_template()`, `delete_template()` |
+| `whatsapp:flows` | `whatsapp.list_flows()`, `create_flow()`, `update_flow()`, `publish_flow()`, … |
+| `whatsapp:read` | `whatsapp.received()`, `get_received()`, `download_media()` |
 
 > `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the mobile money channel is unreleased, so reaching it needs a full-access (`*`) token.
-The WhatsApp abilities are `whatsapp:send`, `whatsapp:templates`, `whatsapp:flows` and `whatsapp:read`.
 
 ### Delivery status
 
@@ -438,6 +521,7 @@ The WhatsApp abilities are `whatsapp:send`, `whatsapp:templates`, `whatsapp:flow
 # needed, because the gateway polls vendors in the background.
 status = client.get_message_status(message_id)
 print(status['data']['status'])      # queued, sent, delivered, failed …
+print(status['data']['read_at'])     # WhatsApp: when it was opened, or None
 
 # A whole batch, by the ids send_batch() returned. 'summary' counts the entire
 # filtered set rather than the current page.
@@ -445,7 +529,17 @@ messages = client.get_messages(ids=[11, 12, 13])
 print(messages['summary']['by_status'])
 ```
 
+A WhatsApp message that was opened stays `delivered` — `read` is not a status.
+`read_at` says when, and the `message.read` webhook tells you as it happens.
+
 ### Webhooks
+
+Events: `message.sent`, `message.delivered`, `message.read` (WhatsApp),
+`message.failed`, `message.permanently_failed` (every retry exhausted, charge
+refunded), `message.received` and `flow.completed` (WhatsApp), and
+`template.approved`, `template.rejected`, `template.paused`, `template.disabled`.
+Subscribe to `*` for all. They can arrive out of order, and `message.sent` can be
+skipped when the outcome is already known.
 
 ```python
 created = client.create_webhook('https://your-app.example/webhooks/sms', ['message.delivered'])
