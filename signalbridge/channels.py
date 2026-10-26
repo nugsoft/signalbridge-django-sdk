@@ -490,12 +490,23 @@ class MobileMoneyChannel(BaseChannel):
         phone: str,
         amount: float,
         currency: str = 'UGX',
-        reference: Optional[str] = None,
         note: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Initiate a collection (request-to-pay). The subscriber approves on their
-        handset; the result arrives by webhook or through ``verify()``.
+        Ask a payer to pay (request-to-pay).
+
+        The payer approves on their handset, so the response is not the outcome:
+        its status is ``pending``. It carries SignalBridge's reference for the
+        transaction in ``data['reference']`` — store it and pass it to
+        ``verify()``. SignalBridge assigns the reference; there is no way to
+        choose your own.
+
+        :param note: Shown to the payer, at most 100 characters
+        :raises ServiceUnavailableException: while the gateway has mobile money
+            collections switched off
+        :raises ValidationException: when the request is invalid, or the
+            provider refused the payment; for a refusal, ``get_data()`` is the
+            transaction, reference included
         """
         if not phone or not phone.strip():
             raise ValidationException("Phone number is required")
@@ -509,22 +520,55 @@ class MobileMoneyChannel(BaseChannel):
             'currency': currency.upper(),
         }
 
-        if reference:
-            payload['reference'] = reference
-
         # 'note' is the text shown to the payer, and the only descriptive field
         # the gateway reads.
         if note:
+            if len(note) > 100:
+                raise ValidationException("The note must be at most 100 characters")
+
             payload['note'] = note
 
-        return self._request('POST', '/mobile-money/initiate', json=payload)
+        return self._mobile_money_request('POST', '/mobile-money/initiate', json=payload)
 
-    def verify(self, transaction_id: str) -> Dict[str, Any]:
-        """Poll the status of a transaction returned by ``initiate()``."""
-        if not transaction_id or not transaction_id.strip():
-            raise ValidationException("Transaction ID is required")
+    def verify(self, reference: str) -> Dict[str, Any]:
+        """
+        Ask what became of a transaction, by the reference ``initiate()``
+        returned.
 
-        return self._request('GET', '/mobile-money/transactions/{}'.format(transaction_id))
+        Statuses only move forward: ``pending``, then possibly ``processing``,
+        then ``completed`` or ``failed`` (``cancelled``, ``rejected`` and
+        ``rolled_back`` exist for payouts). A 404 means no transaction of yours
+        has that reference.
+        """
+        if not reference or not reference.strip():
+            raise ValidationException("Reference is required")
+
+        return self._mobile_money_request('GET', '/mobile-money/transactions/{}'.format(quote(reference, safe='')))
+
+    def _mobile_money_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """
+        Read the two answers the shared error handler would misread.
+
+        The gateway answers 403 while collections are switched off, which the
+        shared handler calls a token without a client. And a payment the
+        provider refused is a 422 that still carries the transaction, whose
+        reason belongs in the message.
+        """
+        try:
+            return self._request(method, endpoint, **kwargs)
+        except NoClientException as exc:
+            if 'not available' in str(exc).lower():
+                raise ServiceUnavailableException(str(exc)) from exc
+            raise
+        except ValidationException as exc:
+            transaction = (exc.get_data() or {}).get('data')
+
+            if isinstance(transaction, dict) and transaction.get('status') == 'failed':
+                message = str(exc) or 'The payment request was refused.'
+                reason = transaction.get('status_message')
+                message = message.rstrip('.') + (': {}'.format(reason) if reason else '.')
+                raise ValidationException(message, None, transaction) from exc
+            raise
 
     def disburse(self, phone: str, amount: float, currency: str = 'UGX', **options) -> Dict[str, Any]:
         """

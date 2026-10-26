@@ -313,18 +313,84 @@ class ChannelTests(ClientTestCase):
         ])
         self.assertEqual(media, b'%PDF-1.4')
 
-    def test_mobile_money_sends_the_note_the_gateway_reads(self):
-        calls = self.fake_request(FakeResponse(payload={}))
+    MOBILE_MONEY_REFERENCE = '0b6f2c1e-7d3a-4a5b-9c8d-1e2f3a4b5c6d'
 
-        self.client.mobile_money.initiate('256700000000', 5000, 'ugx', reference='INV-1', note='Invoice')
+    def mobile_money_transaction(self, **overrides):
+        return {
+            'reference': self.MOBILE_MONEY_REFERENCE,
+            'direction': 'collection',
+            'status': 'pending',
+            'status_message': 'Request is being processed',
+            'phone': '256700000000',
+            'amount': '5000.00',
+            'currency': 'UGX',
+            **overrides,
+        }
 
+    def test_mobile_money_sends_only_what_the_gateway_reads_and_returns_its_reference(self):
+        calls = self.fake_request(FakeResponse(202, {'success': True, 'data': self.mobile_money_transaction()}))
+
+        tx = self.client.mobile_money.initiate('256700000000', 5000, 'ugx', note='Invoice')
+
+        self.assertEqual(tx['data']['reference'], self.MOBILE_MONEY_REFERENCE)
         self.assertEqual(calls[0]['json'], {
             'phone': '256700000000',
             'amount': 5000,
             'currency': 'UGX',
-            'reference': 'INV-1',
             'note': 'Invoice',
         })
+
+    def test_mobile_money_takes_no_reference_of_your_own(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaises(TypeError):
+            self.client.mobile_money.initiate('256700000000', 5000, reference='INV-1')
+
+        self.assertEqual(calls, [])
+
+    def test_mobile_money_refuses_a_note_longer_than_the_gateway_takes(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaises(ValidationException):
+            self.client.mobile_money.initiate('256700000000', 5000, note='x' * 101)
+
+        self.assertEqual(calls, [])
+
+    def test_mobile_money_switched_off_is_reported_as_unavailable(self):
+        self.fake_request(FakeResponse(403, {'success': False, 'message': 'Mobile money collections are not available yet.'}))
+
+        with self.assertRaisesMessage(ServiceUnavailableException, 'Mobile money collections are not available yet.'):
+            self.client.mobile_money.initiate('256700000000', 5000)
+
+    def test_mobile_money_without_the_ability_is_still_a_permissions_error(self):
+        self.fake_request(FakeResponse(403, {
+            'success': False,
+            'message': 'This API token does not have permission to perform this action. Required ability: mobile-money:send.',
+        }))
+
+        with self.assertRaises(InsufficientPermissionsException):
+            self.client.mobile_money.initiate('256700000000', 5000)
+
+    def test_a_refused_payment_says_why_and_keeps_the_transaction(self):
+        self.fake_request(FakeResponse(422, {
+            'success': False,
+            'message': 'The payment request was refused.',
+            'data': self.mobile_money_transaction(status='failed', status_message='Amount must be at least 500'),
+        }))
+
+        with self.assertRaises(ValidationException) as raised:
+            self.client.mobile_money.initiate('256700000000', 100)
+
+        self.assertEqual(str(raised.exception), 'The payment request was refused: Amount must be at least 500')
+        self.assertEqual(raised.exception.get_data()['reference'], self.MOBILE_MONEY_REFERENCE)
+
+    def test_mobile_money_is_verified_by_its_reference(self):
+        calls = self.fake_request(FakeResponse(payload={'success': True, 'data': self.mobile_money_transaction(status='completed')}))
+
+        result = self.client.mobile_money.verify(self.MOBILE_MONEY_REFERENCE)
+
+        self.assertEqual(result['data']['status'], 'completed')
+        self.assertEqual(calls[0]['url'], 'https://gateway.test/api/mobile-money/transactions/' + self.MOBILE_MONEY_REFERENCE)
 
     def test_disbursement_reports_that_it_is_unavailable(self):
         with self.assertRaises(ServiceUnavailableException):

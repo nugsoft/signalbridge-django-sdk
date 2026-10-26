@@ -389,6 +389,22 @@ client.mobile_money   # initiate, verify
 client.ussd           # planned, not live on the gateway yet
 ```
 
+Mobile money collections are built but not switched on on the gateway yet;
+until they are, `initiate()` raises `ServiceUnavailableException`. Build against
+them like this:
+
+```python
+tx = client.mobile_money.initiate('256700000000', 15000, 'UGX', note='Invoice INV-1')
+reference = tx['data']['reference']   # SignalBridge's — store it
+
+status = client.mobile_money.verify(reference)['data']['status']
+# 'pending' | 'processing' — ask again later; 'completed' — paid; 'failed' — see status_message
+```
+
+SignalBridge assigns the reference; `initiate()` takes no `reference` argument.
+A payment the provider refused raises `ValidationException`, with the reason in
+the message and the transaction in `get_data()`.
+
 The flat methods (`send_sms()`, `send_batch()`, …) are kept and proxy to the
 channels, so existing code keeps working.
 
