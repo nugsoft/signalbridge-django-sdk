@@ -636,17 +636,21 @@ Send multiple SMS messages in one request.
 
 **Returns:** Dict with total, successful, failed counts
 
-#### `get_balance(currency='UGX')`
+#### `get_balance(currency='UGX', channel=None)`
 
-Get current balance for a currency.
+Get one balance for a currency. SMS and WhatsApp have a balance each, topped up
+separately; `channel='whatsapp'` reads the WhatsApp one, and leaving it out
+reads SMS.
 
-**Returns:** Dict with balance, credit_limit, segment_price
+**Returns:** Dict with `channel`, balance, credit_limit, and `segment_price`
+(SMS) or `whatsapp_prices` by category (WhatsApp; `None` for a category that
+cannot be sent yet)
 
 #### `get_balance_summary()`
 
 Get comprehensive balance summary with recent activity.
 
-#### `get_transactions(per_page=15, page=1, transaction_type=None, start_date=None, end_date=None)`
+#### `get_transactions(per_page=15, page=1, transaction_type=None, start_date=None, end_date=None, channel=None)`
 
 Retrieve transaction history.
 
@@ -656,6 +660,7 @@ Retrieve transaction history.
 - `transaction_type` (str): Filter by 'credit' or 'debit'
 - `start_date` (str): Start date (YYYY-MM-DD)
 - `end_date` (str): End date (YYYY-MM-DD)
+- `channel` (str): `'sms'` or `'whatsapp'`; both when left out
 
 #### `calculate_segments(message)`
 

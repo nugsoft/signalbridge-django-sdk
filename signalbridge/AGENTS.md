@@ -269,14 +269,20 @@ or nothing.
 
 `get_balance()` returns the resource under `data`, and reading one never creates
 one — a currency with nothing stored reads as zero. Currency must be a
-three-letter code. The result is cached for 60 seconds per token and currency, so
-it is cheap to call but can be up to a minute stale.
+three-letter code. The result is cached for 60 seconds per token, currency and
+channel, so it is cheap to call but can be up to a minute stale.
 
 ```python
 balance = client.get_balance('UGX')['data']
 balance['available_balance']   # balance + credit limit
 balance['segment_price']       # pass to estimate_cost()
 ```
+
+SMS and WhatsApp have a balance each, topped up separately, and each channel
+spends only its own: check `client.get_balance('UGX', channel='whatsapp')`
+before WhatsApp sends, not the SMS balance. A `None` in its `whatsapp_prices`
+means that category cannot be sent yet (the gateway answers 503).
+`get_transactions()` and `request_credit()` take `channel=` too.
 
 Clients cannot credit themselves: `request_credit()` only notifies the
 administrators.

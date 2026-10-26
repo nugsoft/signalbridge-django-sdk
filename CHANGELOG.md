@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SMS and WhatsApp have separate balances on the gateway.** `get_balance()`
+  takes `channel=` — `get_balance('UGX', channel='whatsapp')` reads the
+  WhatsApp balance, with `whatsapp_prices` and `messages_available`; it reads
+  SMS when left out, as before, and is cached per channel. `request_credit()`
+  and `get_transactions()` take `channel=` too. A channel other than `sms` or
+  `whatsapp` raises `ValidationException` before sending.
+
+### Added
 - **Mobile money is live on the gateway.** `mobile_money.balance()` reads your
   mobile money balance (`available` and `held`, per currency).
 - `initiate()` takes `metadata` (your own data, at most 20 keys), which the

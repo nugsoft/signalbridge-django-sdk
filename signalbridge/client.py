@@ -119,22 +119,42 @@ class SignalBridgeClient:
     # Balance
     # -----------------------------
 
-    def get_balance(self, currency: str = 'UGX') -> Dict[str, Any]:
-        currency = currency.upper()
+    #: SMS and WhatsApp have a balance each, topped up separately.
+    BALANCE_CHANNELS = ('sms', 'whatsapp')
 
-        # Scoped by token as well as currency: one process may hold clients for
-        # more than one account, and they must not read each other's balance.
-        cache_key = "sb_balance_{}_{}".format(self._token_fingerprint(), currency)
+    def get_balance(self, currency: str = 'UGX', channel: Optional[str] = None) -> Dict[str, Any]:
+        """
+        One balance: SMS unless ``channel`` is ``'whatsapp'``. An SMS spends
+        only the SMS balance and a WhatsApp message only the WhatsApp one.
+        """
+        currency = currency.upper()
+        params: Dict[str, Any] = {'currency': currency}
+
+        if channel is not None:
+            params['channel'] = self._balance_channel(channel)
+
+        # Scoped by token, currency and channel: one process may hold clients
+        # for more than one account, and they must not read each other's
+        # balance — nor the SMS balance stand in for the WhatsApp one.
+        cache_key = "sb_balance_{}_{}_{}".format(self._token_fingerprint(), currency, params.get('channel', 'sms'))
 
         cached = cache.get(cache_key)
 
         if cached:
             return cached
 
-        data = self._make_request('GET', '/balance', params={'currency': currency})
+        data = self._make_request('GET', '/balance', params=params)
         cache.set(cache_key, data, 60)
 
         return data
+
+    def _balance_channel(self, channel: str) -> str:
+        channel = channel.lower()
+
+        if channel not in self.BALANCE_CHANNELS:
+            raise ValidationException("The balance channel must be one of: {}".format(', '.join(self.BALANCE_CHANNELS)))
+
+        return channel
 
     def get_balance_summary(self) -> Dict[str, Any]:
         return self._make_request('GET', '/balance/summary')
@@ -146,11 +166,14 @@ class SignalBridgeClient:
         transaction_type: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        channel: Optional[str] = None,
     ) -> Dict[str, Any]:
         params: Dict[str, Any] = {'per_page': per_page, 'page': page}
 
         if transaction_type:
             params['type'] = transaction_type
+        if channel:
+            params['channel'] = self._balance_channel(channel)
         if start_date:
             params['start_date'] = start_date
         if end_date:
@@ -163,9 +186,16 @@ class SignalBridgeClient:
         amount: float,
         currency: str = 'UGX',
         description: Optional[str] = None,
+        channel: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Ask the administrators for a top-up. This does not move money."""
+        """
+        Ask the administrators for a top-up of one balance — SMS unless
+        ``channel`` is ``'whatsapp'``. This does not move money.
+        """
         payload: Dict[str, Any] = {'amount': amount, 'currency': currency.upper()}
+
+        if channel:
+            payload['channel'] = self._balance_channel(channel)
 
         if description:
             payload['description'] = description
