@@ -385,7 +385,7 @@ Mirrors the PHP and Laravel SDKs:
 ```python
 client.sms            # send, send_batch, status, messages
 client.whatsapp       # templates, free text, files, buttons and lists, Flows, received messages
-client.mobile_money   # initiate, verify
+client.mobile_money   # initiate, verify (switched off on the gateway for now)
 client.ussd           # planned, not live on the gateway yet
 ```
 

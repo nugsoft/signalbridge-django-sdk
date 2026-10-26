@@ -7,9 +7,10 @@ Each channel is a thin wrapper over the transport on ``SignalBridgeClient``:
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import quote
 
 from . import segments
-from .exceptions import ServiceUnavailableException, SignalBridgeException, ValidationException
+from .exceptions import NoClientException, ServiceUnavailableException, SignalBridgeException, ValidationException
 
 
 class BaseChannel:
