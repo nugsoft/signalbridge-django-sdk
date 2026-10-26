@@ -17,7 +17,7 @@ concurrency:
 jobs:
   tests:
     name: Python ${{ matrix.python }} / Django ${{ matrix.django }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
 
     strategy:
       fail-fast: false
@@ -25,10 +25,13 @@ jobs:
       # windows only overlap for some pairs (Django 3.2 predates Python 3.11,
       # Django 5.0 requires 3.10+). These cover the floor and the ceiling of
       # what the package claims to support.
+      #
+      # ubuntu-latest is now Ubuntu 26.04, which has no Python 3.9
+      # build, so the 3.9 jobs stay on 24.04 for as long as 3.9 is supported.
       matrix:
         include:
-          - { python: "3.9", django: "3.2" }
-          - { python: "3.9", django: "4.2" }
+          - { python: "3.9", django: "3.2", os: "ubuntu-24.04" }
+          - { python: "3.9", django: "4.2", os: "ubuntu-24.04" }
           - { python: "3.11", django: "4.2" }
           - { python: "3.12", django: "4.2" }
           - { python: "3.12", django: "5.0" }
