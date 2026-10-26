@@ -555,6 +555,34 @@ class BalanceCacheTests(ClientTestCase):
             self.assertEqual(request.call_count, 1)
 
 
+class BalanceChannelTests(ClientTestCase):
+    def test_the_whatsapp_balance_is_read_on_its_own_and_cached_apart(self):
+        calls = self.fake_request(FakeResponse(payload={'data': {'channel': 'sms'}}), FakeResponse(payload={'data': {'channel': 'whatsapp'}}))
+
+        self.assertEqual(self.client.get_balance('UGX')['data']['channel'], 'sms')
+        self.assertEqual(self.client.get_balance('UGX', channel='WhatsApp')['data']['channel'], 'whatsapp')
+
+        self.assertEqual(calls[0]['params'], {'currency': 'UGX'})
+        self.assertEqual(calls[1]['params'], {'currency': 'UGX', 'channel': 'whatsapp'})
+
+    def test_transactions_and_credit_requests_take_the_channel(self):
+        calls = self.fake_request(FakeResponse(payload={}), FakeResponse(202, payload={}))
+
+        self.client.get_transactions(channel='whatsapp')
+        self.client.request_credit(5000, channel='whatsapp')
+
+        self.assertEqual(calls[0]['params']['channel'], 'whatsapp')
+        self.assertEqual(calls[1]['json'], {'amount': 5000, 'currency': 'UGX', 'channel': 'whatsapp'})
+
+    def test_a_channel_with_no_balance_is_refused_before_sending(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaisesMessage(ValidationException, 'sms, whatsapp'):
+            self.client.get_balance('UGX', channel='ussd')
+
+        self.assertEqual(calls, [])
+
+
 class ConfigTests(SimpleTestCase):
     @override_settings(SIGNALBRIDGE_TOKEN=None)
     def test_a_missing_token_is_refused(self):
