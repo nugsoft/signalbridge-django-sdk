@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mobile money is live on the gateway.** `mobile_money.balance()` reads your
+  mobile money balance (`available` and `held`, per currency).
+- `initiate()` takes `metadata` (your own data, at most 20 keys), which the
+  gateway returns with the status and in the new `payment.completed` and
+  `payment.failed` webhooks. A completed payment carries `fee` and
+  `net_amount`.
+
+### Changed
+- `initiate()` refuses an amount below 500, the gateway's minimum, before
+  sending (it refused only zero or less).
+- `disburse()` still raises `ServiceUnavailableException`, now saying that
+  payouts are asked for on the SignalBridge dashboard. It is deprecated.
+- README and AGENTS.md: mobile money is no longer described as switched off,
+  and the `mobile-money:*` abilities can be granted.
+
 ## [4.0.1] - 2026-10-26
 
 The first release on PyPI since 3.0.2: the 3.1.0, 4.0.0 and 4.0.1 tags were

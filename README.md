@@ -385,25 +385,39 @@ Mirrors the PHP and Laravel SDKs:
 ```python
 client.sms            # send, send_batch, status, messages
 client.whatsapp       # templates, free text, files, buttons and lists, Flows, received messages
-client.mobile_money   # initiate, verify (switched off on the gateway for now)
+client.mobile_money   # initiate, verify, balance
 client.ussd           # planned, not live on the gateway yet
 ```
 
-Mobile money collections are built but not switched on on the gateway yet;
-until they are, `initiate()` raises `ServiceUnavailableException`. Build against
-them like this:
+Mobile money collects payments from your own customers. The payer approves on
+their handset; the money goes to your mobile money balance, less the collection
+fee, and is separate from your SMS credit:
 
 ```python
-tx = client.mobile_money.initiate('256700000000', 15000, 'UGX', note='Invoice INV-1')
+tx = client.mobile_money.initiate(
+    '256700000000', 15000, 'UGX',
+    note='Invoice INV-1',                    # shown to the payer, at most 100 characters
+    metadata={'tenant_id': 'school-42'},     # your own data, at most 20 keys
+)
 reference = tx['data']['reference']   # SignalBridge's — store it
 
 status = client.mobile_money.verify(reference)['data']['status']
 # 'pending' | 'processing' — ask again later; 'completed' — paid; 'failed' — see status_message
+
+client.mobile_money.balance()['data']
+# [{'currency': 'UGX', 'available': '148500.00', 'held': '52200.00', ...}]
 ```
 
-SignalBridge assigns the reference; `initiate()` takes no `reference` argument.
-A payment the provider refused raises `ValidationException`, with the reason in
-the message and the transaction in `get_data()`.
+The smallest amount is 500. SignalBridge assigns the reference; `initiate()`
+takes no `reference` argument. A completed payment carries `fee` and
+`net_amount`, and the `payment.completed` and `payment.failed` webhooks say how
+a payment ended, with your `metadata`. A payment the provider refused raises
+`ValidationException`, with the reason in the message and the transaction in
+`get_data()`.
+
+Payouts are not made through the API: your administrators ask for them on the
+Balance page of the SignalBridge dashboard, and `disburse()` raises
+`ServiceUnavailableException` saying so.
 
 The flat methods (`send_sms()`, `send_batch()`, …) are kept and proxy to the
 channels, so existing code keeps working.
@@ -527,8 +541,8 @@ except InsufficientPermissionsException as e:
 | `whatsapp:templates` | `whatsapp.list_templates()`, `get_template()`, `create_template()`, `delete_template()` |
 | `whatsapp:flows` | `whatsapp.list_flows()`, `create_flow()`, `update_flow()`, `publish_flow()`, … |
 | `whatsapp:read` | `whatsapp.received()`, `get_received()`, `download_media()` |
-
-> `mobile-money:send` and `mobile-money:read` are not issuable at the moment: the mobile money channel is unreleased, so reaching it needs a full-access (`*`) token.
+| `mobile-money:send` | `mobile_money.initiate()` |
+| `mobile-money:read` | `mobile_money.verify()`, `mobile_money.balance()` |
 
 ### Delivery status
 
@@ -553,7 +567,8 @@ A WhatsApp message that was opened stays `delivered` — `read` is not a status.
 Events: `message.sent`, `message.delivered`, `message.read` (WhatsApp),
 `message.failed`, `message.permanently_failed` (every retry exhausted, charge
 refunded), `message.received` and `flow.completed` (WhatsApp), and
-`template.approved`, `template.rejected`, `template.paused`, `template.disabled`.
+`template.approved`, `template.rejected`, `template.paused`, `template.disabled`,
+and `payment.completed` and `payment.failed` (mobile money).
 Subscribe to `*` for all. They can arrive out of order, and `message.sent` can be
 skipped when the outcome is already known.
 

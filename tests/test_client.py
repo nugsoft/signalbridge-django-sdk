@@ -375,13 +375,13 @@ class ChannelTests(ClientTestCase):
         self.fake_request(FakeResponse(422, {
             'success': False,
             'message': 'The payment request was refused.',
-            'data': self.mobile_money_transaction(status='failed', status_message='Amount must be at least 500'),
+            'data': self.mobile_money_transaction(status='failed', status_message='Payer number is barred'),
         }))
 
         with self.assertRaises(ValidationException) as raised:
-            self.client.mobile_money.initiate('256700000000', 100)
+            self.client.mobile_money.initiate('256700000000', 5000)
 
-        self.assertEqual(str(raised.exception), 'The payment request was refused: Amount must be at least 500')
+        self.assertEqual(str(raised.exception), 'The payment request was refused: Payer number is barred')
         self.assertEqual(raised.exception.get_data()['reference'], self.MOBILE_MONEY_REFERENCE)
 
     def test_mobile_money_is_verified_by_its_reference(self):
@@ -392,9 +392,46 @@ class ChannelTests(ClientTestCase):
         self.assertEqual(result['data']['status'], 'completed')
         self.assertEqual(calls[0]['url'], 'https://gateway.test/api/mobile-money/transactions/' + self.MOBILE_MONEY_REFERENCE)
 
-    def test_disbursement_reports_that_it_is_unavailable(self):
-        with self.assertRaises(ServiceUnavailableException):
+    def test_mobile_money_sends_metadata(self):
+        calls = self.fake_request(FakeResponse(202, {'success': True, 'data': self.mobile_money_transaction()}))
+
+        self.client.mobile_money.initiate('256700000000', 5000, metadata={'tenant_id': 'school-42'})
+
+        self.assertEqual(calls[0]['json']['metadata'], {'tenant_id': 'school-42'})
+
+    def test_mobile_money_refuses_more_metadata_than_the_gateway_keeps(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaises(ValidationException):
+            self.client.mobile_money.initiate('256700000000', 5000, metadata={str(i): 'x' for i in range(21)})
+
+        self.assertEqual(calls, [])
+
+    def test_mobile_money_refuses_an_amount_below_the_gateway_minimum(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaisesMessage(ValidationException, 'Amount must be at least 500'):
+            self.client.mobile_money.initiate('256700000000', 499)
+
+        self.assertEqual(calls, [])
+
+    def test_mobile_money_balance_is_read(self):
+        calls = self.fake_request(FakeResponse(payload={'success': True, 'data': [
+            {'currency': 'UGX', 'available': '148500.00', 'held': '52200.00', 'updated_at': '2026-10-26T11:02:13+03:00'},
+        ]}))
+
+        balances = self.client.mobile_money.balance()['data']
+
+        self.assertEqual(balances[0]['available'], '148500.00')
+        self.assertEqual(calls[0]['url'], 'https://gateway.test/api/mobile-money/balance')
+
+    def test_disbursement_points_to_payouts_on_the_dashboard(self):
+        calls = self.fake_request(FakeResponse(payload={}))
+
+        with self.assertRaisesMessage(ServiceUnavailableException, 'Balance page of the SignalBridge dashboard'):
             self.client.mobile_money.disburse('256700000000', 5000)
+
+        self.assertEqual(calls, [])
 
     def test_an_over_long_ussd_message_is_refused(self):
         with self.assertRaises(ValidationException):

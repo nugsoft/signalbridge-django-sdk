@@ -486,12 +486,19 @@ class WhatsAppChannel(BaseChannel):
 
 
 class MobileMoneyChannel(BaseChannel):
+    # The gateway refuses less than this; checking first saves a round trip.
+    MINIMUM_AMOUNT = 500
+
+    # The most metadata keys the gateway keeps on a transaction.
+    MAX_METADATA_KEYS = 20
+
     def initiate(
         self,
         phone: str,
         amount: float,
         currency: str = 'UGX',
         note: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Ask a payer to pay (request-to-pay).
@@ -502,7 +509,14 @@ class MobileMoneyChannel(BaseChannel):
         ``verify()``. SignalBridge assigns the reference; there is no way to
         choose your own.
 
+        The money goes to your mobile money balance (see ``balance()``), less
+        the collection fee, and the ``payment.completed`` or ``payment.failed``
+        webhook says how it ended.
+
         :param note: Shown to the payer, at most 100 characters
+        :param metadata: Your own data, at most 20 keys — which of your
+            customers paid, an order number — returned with the status and in
+            the webhooks
         :raises ServiceUnavailableException: while the gateway has mobile money
             collections switched off
         :raises ValidationException: when the request is invalid, or the
@@ -512,8 +526,8 @@ class MobileMoneyChannel(BaseChannel):
         if not phone or not phone.strip():
             raise ValidationException("Phone number is required")
 
-        if amount <= 0:
-            raise ValidationException("Amount must be greater than zero")
+        if amount < self.MINIMUM_AMOUNT:
+            raise ValidationException("Amount must be at least {}".format(self.MINIMUM_AMOUNT))
 
         payload: Dict[str, Any] = {
             'phone': phone,
@@ -529,6 +543,18 @@ class MobileMoneyChannel(BaseChannel):
 
             payload['note'] = note
 
+        if metadata is not None:
+            if not isinstance(metadata, dict):
+                raise ValidationException("Metadata must be a dict")
+
+            if len(metadata) > self.MAX_METADATA_KEYS:
+                raise ValidationException(
+                    "Metadata can have at most {} keys".format(self.MAX_METADATA_KEYS)
+                )
+
+            if metadata:
+                payload['metadata'] = metadata
+
         return self._mobile_money_request('POST', '/mobile-money/initiate', json=payload)
 
     def verify(self, reference: str) -> Dict[str, Any]:
@@ -537,14 +563,23 @@ class MobileMoneyChannel(BaseChannel):
         returned.
 
         Statuses only move forward: ``pending``, then possibly ``processing``,
-        then ``completed`` or ``failed`` (``cancelled``, ``rejected`` and
-        ``rolled_back`` exist for payouts). A 404 means no transaction of yours
-        has that reference.
+        then ``completed`` or ``failed``. A completed payment carries ``fee``
+        and ``net_amount``, what reached your mobile money balance. A 404 means
+        no transaction of yours has that reference.
         """
         if not reference or not reference.strip():
             raise ValidationException("Reference is required")
 
         return self._mobile_money_request('GET', '/mobile-money/transactions/{}'.format(quote(reference, safe='')))
+
+    def balance(self) -> Dict[str, Any]:
+        """
+        Read your mobile money balance: what your payments collected, less
+        fees and payouts. ``data`` is a list with one entry per currency, each
+        with ``available`` and ``held`` (set aside for a payout not yet
+        settled). It is separate from your SMS credit.
+        """
+        return self._mobile_money_request('GET', '/mobile-money/balance')
 
     def _mobile_money_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
@@ -573,16 +608,18 @@ class MobileMoneyChannel(BaseChannel):
 
     def disburse(self, phone: str, amount: float, currency: str = 'UGX', **options) -> Dict[str, Any]:
         """
-        Send money to a subscriber's wallet.
+        Deprecated: payouts are not made through the API.
 
-        Not available yet: the gateway exposes no disbursement endpoint. Calling
-        through would 404, which reads as a bad base URL and sends you looking
-        in the wrong place.
+        Your administrators ask for a payout on the Balance page of the
+        SignalBridge dashboard, and Nugsoft pays your mobile money balance out
+        to your payout account. Calling through would 404, which reads as a bad
+        base URL, so this raises instead.
         """
         raise ServiceUnavailableException(
-            "Mobile money disbursement is not available yet: the SignalBridge API does not "
-            "expose /mobile-money/disburse. Use initiate() to collect payments. Contact the "
-            "SignalBridge team if you need payouts enabled."
+            "Payouts are not made through the API: your administrators ask for them on the "
+            "Balance page of the SignalBridge dashboard, and Nugsoft pays your mobile money "
+            "balance out to your payout account. Use initiate() to collect payments and "
+            "balance() to read what you hold."
         )
 
 

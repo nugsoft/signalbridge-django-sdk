@@ -194,12 +194,13 @@ missing.
 | `whatsapp:templates` | `whatsapp.list_templates()`, `get_template()`, `create_template()`, `delete_template()` |
 | `whatsapp:flows` | `whatsapp.list_flows()`, `get_flow()`, `create_flow()`, `update_flow()`, `publish_flow()`, `regenerate_flow_secret()`, `delete_flow()` |
 | `whatsapp:read` | `whatsapp.received()`, `get_received()`, `download_media()` |
+| `mobile-money:send` | `mobile_money.initiate()` |
+| `mobile-money:read` | `mobile_money.verify()`, `mobile_money.balance()` |
 | `mcp:read` | Nothing in this SDK: it is for an agent's token on the MCP server, never the product's |
 | `mcp:write` | Nothing in this SDK: with `mcp:read`, lets an agent's token set up tokens, webhooks, templates and Flows on the MCP server |
 
 Creating, changing and deleting templates and Flows also needs a client
-administrator. Mobile money abilities cannot be granted yet, so mobile money
-needs a full-access (`*`) token.
+administrator.
 
 ## Delivery is asynchronous
 
@@ -285,23 +286,31 @@ administrators.
 ```python
 client.sms            # send, send_batch, status, messages
 client.whatsapp       # send, send_template, send_flow, templates, Flows, received
-client.mobile_money   # initiate, verify
+client.mobile_money   # initiate, verify, balance
 client.ussd           # unreleased on the gateway
 ```
 
-Mobile money reads `note` (the text shown to the payer, at most 100 characters)
-only. SignalBridge assigns the reference; there is no `reference` argument:
+Mobile money collects from the client's own customers into its mobile money
+balance (less the collection fee), separate from SMS credit. `initiate()` reads
+`note` (shown to the payer, at most 100 characters) and `metadata` (the
+client's own data, at most 20 keys — use it to say which of their customers
+paid). The smallest amount is 500. SignalBridge assigns the reference; there is
+no `reference` argument:
 
 ```python
-tx = client.mobile_money.initiate('256700000000', 15000, 'UGX', note='Invoice INV-1')
+tx = client.mobile_money.initiate('256700000000', 15000, 'UGX', note='Invoice INV-1',
+                                  metadata={'tenant_id': 'school-42'})
 reference = tx['data']['reference']   # store it
 client.mobile_money.verify(reference)
+client.mobile_money.balance()         # available and held, per currency
 ```
 
-There are no mobile money webhooks yet: poll `verify()`. Until the gateway
-switches collections on, `initiate()` raises `ServiceUnavailableException` — do
-not treat that as a token or client problem. A payment the provider refused
-raises `ValidationException` whose `get_data()` is the transaction.
+Subscribe to the `payment.completed` and `payment.failed` webhooks rather than
+polling `verify()`; both carry `metadata`, and a completed payment `fee` and
+`net_amount`. A payment the provider refused raises `ValidationException` whose
+`get_data()` is the transaction. If the gateway has collections switched off,
+`initiate()` raises `ServiceUnavailableException` — do not treat that as a token
+or client problem.
 
 Start a conversation with an approved template. Free text
 (`client.whatsapp.send()`) is delivered only within 24 hours of the customer's last
@@ -348,9 +357,10 @@ is `button` or `list`, and `reply_to_message_id` is the message answered. Encode
 in the id what the product needs to act (`confirm_4821`), and act on the id, not
 on the title text. A link button sends nothing back.
 
-`client.mobile_money.disburse()` raises `ServiceUnavailableException`; the gateway
-exposes no payout endpoint. Collecting with `initiate()` is built but switched
-off on the gateway for now, so it raises `ServiceUnavailableException` too.
+`client.mobile_money.disburse()` raises `ServiceUnavailableException`: payouts
+are not made through the API. The client's administrators ask for them on the
+Balance page of the SignalBridge dashboard; do not build a payout feature on the
+SDK.
 
 ## Management commands
 
