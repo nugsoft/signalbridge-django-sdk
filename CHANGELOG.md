@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-10-26
+
+The first release on PyPI since 3.0.2: the 3.1.0, 4.0.0 and 4.0.1 tags were
+created without the version in `pyproject.toml` being raised, so none of them
+was published. 4.0.1 carries everything below. It is a major version because
+`mobile_money.initiate()` no longer takes `reference=` (see Changed).
+
 ### Documentation
 - The status examples show `read_at`: a WhatsApp message that was opened
   stays `delivered`, and `read_at` says when.
