@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 from . import segments
-from .exceptions import ServiceUnavailableException, ValidationException
+from .exceptions import ServiceUnavailableException, SignalBridgeException, ValidationException
 
 
 class BaseChannel:
@@ -595,3 +595,55 @@ class UssdChannel(BaseChannel):
             'message': message,
             'end_session': end_session,
         })
+
+
+class SandboxChannel(BaseChannel):
+    """
+    The sandbox's tools: what, on live, a customer or a provider would make
+    happen. They exist only in the sandbox — set SIGNALBRIDGE_SANDBOX = True.
+    """
+
+    STATUSES = ('delivered', 'failed', 'read')
+
+    def magic_numbers(self) -> Dict[str, Any]:
+        """The magic numbers and what each does, and the template review rule."""
+        return self._sandbox_request('GET', '/sandbox')
+
+    def customer_message(self, from_number: str, **options) -> Dict[str, Any]:
+        """
+        Simulate a customer's WhatsApp message to you. It arrives as a real one
+        does — a message.received or flow.completed webhook — linked to one of
+        your messages to that number (the one given, or your latest).
+
+        :param options: type (text, button, interactive, flow, image, document, audio,
+            video, sticker, location), text, reply_to_message_id, reply_id (interactive),
+            answers (flow), latitude, longitude, name
+        """
+        if not from_number or not from_number.strip():
+            raise ValidationException("The customer's number is required")
+
+        return self._sandbox_request('POST', '/sandbox/whatsapp/customer-message', json={'from': from_number, **options})
+
+    def set_message_status(self, message_id: int, status: str) -> Dict[str, Any]:
+        """Move one of your messages to an outcome now: delivered, failed, or — on WhatsApp — read."""
+        if status not in self.STATUSES:
+            raise ValidationException("The status must be one of: " + ", ".join(self.STATUSES))
+
+        return self._sandbox_request('POST', '/sandbox/messages/{}/status'.format(message_id), json={'status': status})
+
+    def add_credit(self) -> Dict[str, Any]:
+        """Free test credit, up to the sandbox's ceiling."""
+        return self._sandbox_request('POST', '/sandbox/credit')
+
+    def _sandbox_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        try:
+            return self._request(method, endpoint, **kwargs)
+        except SignalBridgeException as error:
+            # A sandbox answers "Message not found." for a message that is not
+            # yours; any other 404 at a sandbox path means this is not one.
+            if getattr(error, 'code', None) == 404 and str(error) != 'Message not found.':
+                raise SignalBridgeException(
+                    "The sandbox tools exist only in the sandbox. Set SIGNALBRIDGE_SANDBOX = True and use a sandbox token.",
+                    404,
+                ) from error
+            raise

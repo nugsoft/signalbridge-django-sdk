@@ -9,7 +9,8 @@ from unittest.mock import patch
 from django.core.cache import cache
 from django.test import SimpleTestCase, override_settings
 
-from signalbridge.client import SAFE_RETRY_METHODS, SignalBridgeClient
+from signalbridge.client import SAFE_RETRY_METHODS, SANDBOX_URL, SignalBridgeClient
+from signalbridge.sandbox import MagicNumbers
 from signalbridge.exceptions import (
     InsufficientBalanceException,
     InsufficientPermissionsException,
@@ -466,3 +467,76 @@ class ConfigTests(SimpleTestCase):
         from signalbridge.client import DEFAULT_BASE_URL
 
         self.assertEqual(DEFAULT_BASE_URL, 'https://signal-bridge.nugsoftapps.net/api')
+
+
+class SandboxTests(SimpleTestCase):
+    def setUp(self):
+        cache.clear()
+
+    def fake_request(self, client, *responses):
+        calls = []
+
+        def handler(method, url, json=None, params=None, timeout=None):
+            calls.append({'method': method, 'url': url, 'json': json})
+            return responses[len(calls) - 1] if len(calls) <= len(responses) else responses[-1]
+
+        patcher = patch.object(client.session, 'request', side_effect=handler)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return calls
+
+    def test_the_sandbox_setting_points_the_client_at_the_sandbox(self):
+        with self.settings(SIGNALBRIDGE_SANDBOX=True, SIGNALBRIDGE_URL=None):
+            client = SignalBridgeClient(token='sandbox-token')
+
+        self.assertEqual(client.base_url, SANDBOX_URL)
+        self.assertTrue(client.is_sandbox)
+        self.assertFalse(SignalBridgeClient(token='live-token').is_sandbox)
+
+    def test_an_explicit_url_wins_over_the_sandbox_setting(self):
+        with self.settings(SIGNALBRIDGE_SANDBOX=True, SIGNALBRIDGE_URL='https://gateway.test/api'):
+            client = SignalBridgeClient(token='t')
+
+        self.assertEqual(client.base_url, 'https://gateway.test/api')
+
+    def test_the_sandbox_tools_hit_their_routes(self):
+        client = SignalBridgeClient(token='sandbox-token', base_url=SANDBOX_URL)
+        calls = self.fake_request(client, FakeResponse(payload={}))
+        tools = client.sandbox_tools
+
+        tools.magic_numbers()
+        tools.customer_message(MagicNumbers.DELIVERED, type='interactive', reply_to_message_id=42, reply_id='confirm_42')
+        tools.set_message_status(42, 'read')
+        tools.add_credit()
+
+        self.assertEqual([(c['method'], c['url']) for c in calls], [
+            ('GET', SANDBOX_URL + '/sandbox'),
+            ('POST', SANDBOX_URL + '/sandbox/whatsapp/customer-message'),
+            ('POST', SANDBOX_URL + '/sandbox/messages/42/status'),
+            ('POST', SANDBOX_URL + '/sandbox/credit'),
+        ])
+        self.assertEqual(calls[1]['json'], {'from': '256700000001', 'type': 'interactive', 'reply_to_message_id': 42, 'reply_id': 'confirm_42'})
+        self.assertEqual(calls[2]['json'], {'status': 'read'})
+
+    def test_the_sandbox_tools_on_live_say_where_they_live(self):
+        client = SignalBridgeClient(token='live-token')
+        self.fake_request(client, FakeResponse(status_code=404, payload={'message': 'Not Found'}))
+
+        with self.assertRaisesRegex(SignalBridgeException, 'only in the sandbox'):
+            client.sandbox_tools.add_credit()
+
+    def test_a_message_that_is_not_yours_is_still_reported_as_such(self):
+        client = SignalBridgeClient(token='sandbox-token', base_url=SANDBOX_URL)
+        self.fake_request(client, FakeResponse(status_code=404, payload={'success': False, 'message': 'Message not found.'}))
+
+        with self.assertRaisesRegex(SignalBridgeException, 'Message not found.'):
+            client.sandbox_tools.set_message_status(99, 'delivered')
+
+    def test_an_unknown_status_is_refused_before_sending(self):
+        client = SignalBridgeClient(token='sandbox-token', base_url=SANDBOX_URL)
+        calls = self.fake_request(client, FakeResponse(payload={}))
+
+        with self.assertRaises(ValidationException):
+            client.sandbox_tools.set_message_status(1, 'lost')
+
+        self.assertEqual(calls, [])
