@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-26
+
 ### Added
 - **SMS and WhatsApp have separate balances on the gateway.** `get_balance()`
   takes `channel=` — `get_balance('UGX', channel='whatsapp')` reads the
